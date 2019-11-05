@@ -1,6 +1,7 @@
 from mujoco_py import load_model_from_xml, MjSim, MjViewer
 import math
 import os
+from generate_scene import generate_scene
 
 MODEL_XML = """
 <?xml version="1.0" ?>
@@ -62,6 +63,10 @@ MODEL_XML = """
             <freejoint/>
             <geom mass="0.01467" pos="0 0 0" rgba="1 0 0 1" size="0.075 0.025 0.015" type="box"/>
         </body>
+        <body name="sphere" pos="0 0 0">
+            <freejoint/>
+            <geom mass="1" pos="5 0 2" size="1 1 1 " type="box"/>
+        </body>
         
         
     </worldbody>
@@ -70,6 +75,8 @@ MODEL_XML = """
 </mujoco>
 """
 
+MODEL_XML = generate_scene()
+
 model = load_model_from_xml(MODEL_XML)
 sim = MjSim(model)
 viewer = MjViewer(sim)
@@ -77,7 +84,8 @@ viewer.cam.elevation = -7
 viewer.cam.azimuth = 180
 viewer._run_speed = 1
 viewer.cam.lookat[2] = -1
-sim
+viewer.cam.distance = 15
+viewer._run_speed = 0.01
 t = 0
 while True:
     #sim.data.ctrl[0] = math.cos(t / 1000.) # * 0.01
