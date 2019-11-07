@@ -39,69 +39,81 @@ def generate_block(number, pos_sigma, angle_sigma, spacing):
 
     s = f'''
             <body name="block{number}" pos="{x} {y} {z+block_height_mean/2}" euler="0 0 {angle_z}">
-                <freejoint/>
+                <joint name="x_block{number}" type="slide" axis="1 0 0"/>
+                <joint name="y_block{number}" type="slide" axis="0 1 0"/>
+                <joint name="z_block{number}" type="slide" axis="0 0 1"/>
                 <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box"/>
             </body>'''
     return s
 
 
-def generate_scene(pos_sigma=0.0005,
+def generate_scene(num_blocks=54,
+                   pos_sigma=0.0005,
                    angle_sigma=0.2,
                    spacing=block_width_sigma*3):
 
-    blocks_xml = ""
-    for i in range(54):
-        blocks_xml += generate_block(i, pos_sigma, angle_sigma, spacing)
 
+    blocks_xml = ""
+    for i in range(num_blocks):
+        blocks_xml += generate_block(i, pos_sigma, angle_sigma, spacing)
     MODEL_XML = f"""
-    <?xml version="1.0" ?>
-    <mujoco>
-        
-        <size nconmax="3200" njmax="8000"/>
-    
-        <statistic extent="2" meansize=".05"/>
-        
-        <default class="main">
-            <default class="block">
-                <geom rgba="0 1 0 1" condim="4"/>
-            </default>
-        </default>
-    
-        <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 1"/>
-    
-        <visual>
-            <rgba haze="0.15 0.25 0.35 1"/>
-            <quality shadowsize="2048"/>
-            <map stiffness="700" shadowscale="0.5" fogstart="10" fogend="15" zfar="40" haze="0.3"/>
-        </visual>
-    
-        <asset>
-            <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
-            <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 
-                width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
-            <texture name="texsponge" type="2d" file="/home/bch_svt/cartpole/simulation/sponge.png"/>   
-            <texture name="texcarpet" type="2d" file="/home/bch_svt/cartpole/simulation/carpet.png"/>  
-    
-            <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/marble.png"/>s
-    
-            <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
-            <material name="matcarpet" texture="texcarpet"/>
-            <material name="matsponge" texture="texsponge" specular="0.3"/>
-            <material name="matmarble" texture="texmarble" rgba=".7 .7 .7 1"/>
-        </asset>
-    
-        <worldbody>
-            <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
-            <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>
-            <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
+        <?xml version="1.0" ?>
+        <mujoco>
             
-            {blocks_xml} 
-    
-        </worldbody>
-        <actuator>
-        </actuator>
-    </mujoco>
-    """
+            <size nconmax="3200" njmax="8000"/>    
+            <statistic extent="2" meansize=".05"/>
+              
+            <default class="main">
+                <default class="block">
+                    <geom rgba="0 1 0 1" condim="4"/>
+                </default>
+            </default>
+            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 1"/>
+        
+            <visual>
+                <rgba haze="0.15 0.25 0.35 1"/>
+                <quality shadowsize="2048"/>
+                <map stiffness="700" shadowscale="0.5" fogstart="10" fogend="15" zfar="40" haze="0.3"/>
+            </visual>
+        
+            <asset>
+                <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
+                <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 
+                    width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
+                <texture name="texsponge" type="2d" file="/home/bch_svt/cartpole/simulation/sponge.png"/>   
+                <texture name="texcarpet" type="2d" file="/home/bch_svt/cartpole/simulation/carpet.png"/>  
+        
+                <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/marble.png"/>s
+        
+                <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
+                <material name="matcarpet" texture="texcarpet"/>
+                <material name="matsponge" texture="texsponge" specular="0.3"/>
+                <material name="matmarble" texture="texmarble" rgba=".7 .7 .7 1"/>
+            </asset>
+        
+            <worldbody>
+                <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
+                <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>
+                <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
+                
+                <!-- coordinate axes -->
+                <geom name="x_axis" pos="3 3 0.5" type="box" size="0.5 0.1 0.1"/>
+                <geom name="y_axis" pos="3 3 0.5" type="box" size="0.1 0.5 0.1"/>
+                <geom name="z_axis" pos="3 3 0.5" type="box" size="0.1 0.1 0.5"/>
+                
+                
+                
+                {blocks_xml} 
+        
+            </worldbody>
+            <actuator>
+            </actuator>
+            <sensor>
+                <jointpos name="pos_block1" joint="x_block4"/>
+            </sensor>
+        </mujoco>
+        """
+
     return MODEL_XML
 
 
