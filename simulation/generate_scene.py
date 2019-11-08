@@ -3,6 +3,17 @@ from numpy.random import normal
 # global constants
 scaler = 20
 timestep = 0.01
+
+one_millimeter = 0.001 * scaler
+
+coordinate_axes_pos_x = -0.15 * scaler
+coordinate_axes_pos_y = -0.15 * scaler
+coordinate_axes_pos_z = 0
+coordinate_axes_width = 0.005 * scaler
+coordinate_axes_height = 0.025 * scaler
+
+pusher_size = 0.005 * scaler
+
 # empirical data
 block_length_mean = 0.0747722 * scaler
 block_length_sigma = 0.000236 * scaler
@@ -13,6 +24,16 @@ block_height_sigma = 0.00003773 * scaler
 block_mass_mean = 0.012865 * scaler**3
 block_mass_sigma = 0.00212 * scaler**3
 
+
+def generate_coordinate_axes():
+    s = f"""<body name="coordinate_axes" pos="{coordinate_axes_pos_x} {coordinate_axes_pos_y} {coordinate_axes_pos_z}">
+                    <geom name="origin" rgba="0.33 0.33 0.33 1" pos="0 0 {coordinate_axes_width}" size="{coordinate_axes_width} {coordinate_axes_width} {coordinate_axes_width}" type="box"/>
+                    <geom name="x_axis" rgba="1 0 0 1" pos="{coordinate_axes_height + coordinate_axes_width} 0 {coordinate_axes_width}" type="box" size="{coordinate_axes_height} {coordinate_axes_width} {coordinate_axes_width}"/>
+                    <geom name="y_axis" rgba="0 1 0 1" pos="0 {coordinate_axes_height + coordinate_axes_width} {coordinate_axes_width}" type="box" size="{coordinate_axes_width} {coordinate_axes_height} {coordinate_axes_width}"/>
+                    <geom name="z_axis" rgba="0 0 1 1" pos="0 0 {coordinate_axes_height + 2 * coordinate_axes_width}" type="box" size="{coordinate_axes_width} {coordinate_axes_width} {coordinate_axes_height}"/>
+                </body>"""
+
+    return s
 
 
 def generate_block(number, pos_sigma, angle_sigma, spacing):
@@ -38,12 +59,10 @@ def generate_block(number, pos_sigma, angle_sigma, spacing):
                                                         [block_length_sigma, block_width_sigma, block_height_sigma])
 
     s = f'''
-            <body name="block{number}" pos="{x} {y} {z+block_height_mean/2}" euler="0 0 {angle_z}">
-                <joint name="x_block{number}" type="slide" axis="1 0 0"/>
-                <joint name="y_block{number}" type="slide" axis="0 1 0"/>
-                <joint name="z_block{number}" type="slide" axis="0 0 1"/>
-                <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box"/>
-            </body>'''
+                <body name="block{number}" pos="{x} {y} {z+block_height_mean/2}" euler="0 0 {angle_z}">
+                    <freejoint/>
+                    <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box"/>
+                </body>'''
     return s
 
 
@@ -56,6 +75,7 @@ def generate_scene(num_blocks=54,
     blocks_xml = ""
     for i in range(num_blocks):
         blocks_xml += generate_block(i, pos_sigma, angle_sigma, spacing)
+
     MODEL_XML = f"""
         <?xml version="1.0" ?>
         <mujoco>
@@ -65,10 +85,10 @@ def generate_scene(num_blocks=54,
               
             <default class="main">
                 <default class="block">
-                    <geom rgba="0 1 0 1" condim="4"/>
+                    <geom rgba="0.8235 0.651 0.4745 1" condim="4"/>
                 </default>
             </default>
-            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 1"/>
+            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5"/>
         
             <visual>
                 <rgba haze="0.15 0.25 0.35 1"/>
@@ -92,24 +112,37 @@ def generate_scene(num_blocks=54,
             </asset>
         
             <worldbody>
+                <!-- lighting -->
                 <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
                 <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>
+                
+                <!-- floor -->
                 <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
                 
                 <!-- coordinate axes -->
-                <geom name="x_axis" pos="3 3 0.5" type="box" size="0.5 0.1 0.1"/>
-                <geom name="y_axis" pos="3 3 0.5" type="box" size="0.1 0.5 0.1"/>
-                <geom name="z_axis" pos="3 3 0.5" type="box" size="0.1 0.1 0.5"/>
+                {generate_coordinate_axes()}
                 
+                <!-- pusher -->
+                <body name="dummy" pos="3 3 3">
+                    <joint name="x_dummy_slide" type="slide" axis="1 0 0" damping="0.5" pos ="0 0 0"/>
+                    <joint name="y_dummy_slide" type="slide" axis="0 1 0" damping="0.5" pos ="0 0 0"/>
+                    <joint name="z_dummy_slide" type="slide" axis="0 0 1" damping="0.5" pos ="0 0 0"/>
+                    <geom name="dummy" type="box" size="{pusher_size} {pusher_size} {pusher_size}" mass="0.01"/>
+                </body>
                 
-                
+                <!-- jenga blocks -->
                 {blocks_xml} 
         
             </worldbody>
+            
             <actuator>
+                <position kp="10" gear="1 0 0 0 0 0" joint="x_dummy_slide"/>
+                <position kp="10" gear="1 0 0 0 0 0" joint="y_dummy_slide"/>
+                <position kp="10" gear="1 0 0 0 0 0" joint="z_dummy_slide"/>
             </actuator>
+            
             <sensor>
-                <jointpos name="pos_block1" joint="x_block4"/>
+                <framepos name="block42_pos" objtype="body" objname="block42"/>
             </sensor>
         </mujoco>
         """
