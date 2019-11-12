@@ -1,8 +1,10 @@
 from numpy.random import normal
+from math import sqrt
 
 # global constants
 scaler = 20
 timestep = 0.01
+block_sizes = []
 
 one_millimeter = 0.001 * scaler
 
@@ -11,8 +13,6 @@ coordinate_axes_pos_y = -0.15 * scaler
 coordinate_axes_pos_z = 0
 coordinate_axes_width = 0.005 * scaler
 coordinate_axes_height = 0.025 * scaler
-
-pusher_size = 0.005 * scaler
 
 # empirical data
 block_length_mean = 0.0747722 * scaler
@@ -23,6 +23,25 @@ block_height_mean = 0.0146361 * scaler
 block_height_sigma = 0.00003773 * scaler
 block_mass_mean = 0.012865 * scaler**3
 block_mass_sigma = 0.00212 * scaler**3
+
+# pusher
+pusher_size = 0.005 * scaler
+pusher_mass = 0.0125 * scaler**3
+pusher_kp = pusher_mass * 1000
+pusher_damping = 2 * pusher_mass * sqrt(pusher_kp/pusher_mass)  # critical damping
+pusher_starting_pos = "3 3 3"
+
+def generate_block_rotation_sensors(num):
+    s = ""
+    for i in range(num):
+        s += f"""<framequat name="block{i}_pos" objtype="body" objname="block{i}"/>\n                """
+    return s
+
+def generate_block_position_sensors(num):
+    s = ""
+    for i in range(num):
+        s += f"""<framepos name="block{i}_rotation" objtype="body" objname="block{i}"/>\n                """
+    return s
 
 
 def generate_coordinate_axes():
@@ -57,6 +76,7 @@ def generate_block(number, pos_sigma, angle_sigma, spacing):
     [x, y] = normal([x, y], [pos_sigma, pos_sigma])
     [block_size_x, block_size_y, block_size_z] = normal([block_length_mean/2, block_width_mean/2, block_height_mean/2],
                                                         [block_length_sigma, block_width_sigma, block_height_sigma])
+    block_sizes.append([block_size_x, block_size_y, block_size_z])
 
     s = f'''
                 <body name="block{number}" pos="{x} {y} {z+block_height_mean/2}" euler="0 0 {angle_z}">
@@ -75,6 +95,9 @@ def generate_scene(num_blocks=54,
     blocks_xml = ""
     for i in range(num_blocks):
         blocks_xml += generate_block(i, pos_sigma, angle_sigma, spacing)
+
+    block_position_sensors_xml = generate_block_position_sensors(num_blocks)
+    block_rotation_sensors_xml = generate_block_rotation_sensors(num_blocks)
 
     MODEL_XML = f"""
         <?xml version="1.0" ?>
@@ -123,11 +146,11 @@ def generate_scene(num_blocks=54,
                 {generate_coordinate_axes()}
                 
                 <!-- pusher -->
-                <body name="dummy" pos="3 3 3">
-                    <joint name="x_dummy_slide" type="slide" axis="1 0 0" damping="0.5" pos ="0 0 0"/>
-                    <joint name="y_dummy_slide" type="slide" axis="0 1 0" damping="0.5" pos ="0 0 0"/>
-                    <joint name="z_dummy_slide" type="slide" axis="0 0 1" damping="0.5" pos ="0 0 0"/>
-                    <geom name="dummy" type="box" size="{pusher_size} {pusher_size} {pusher_size}" mass="0.01"/>
+                <body name="dummy" pos="{pusher_starting_pos}">
+                    <joint name="x_dummy_slide" type="slide" axis="1 0 0" damping="{pusher_damping}" pos ="0 0 0"/>
+                    <joint name="y_dummy_slide" type="slide" axis="0 1 0" damping="{pusher_damping}" pos ="0 0 0"/>
+                    <joint name="z_dummy_slide" type="slide" axis="0 0 1" damping="{pusher_damping}" pos ="0 0 0"/>
+                    <geom name="dummy" type="box" size="{pusher_size} {pusher_size} {pusher_size}" mass="{pusher_mass}"/>
                 </body>
                 
                 <!-- jenga blocks -->
@@ -136,13 +159,14 @@ def generate_scene(num_blocks=54,
             </worldbody>
             
             <actuator>
-                <position kp="10" gear="1 0 0 0 0 0" joint="x_dummy_slide"/>
-                <position kp="10" gear="1 0 0 0 0 0" joint="y_dummy_slide"/>
-                <position kp="10" gear="1 0 0 0 0 0" joint="z_dummy_slide"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_slide"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_slide"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_slide"/>
             </actuator>
             
             <sensor>
-                <framepos name="block42_pos" objtype="body" objname="block42"/>
+                {block_position_sensors_xml}
+                {block_rotation_sensors_xml}
             </sensor>
         </mujoco>
         """
