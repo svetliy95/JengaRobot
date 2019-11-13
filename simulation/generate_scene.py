@@ -150,6 +150,9 @@ def generate_scene(num_blocks=54,
                     <joint name="x_dummy_slide" type="slide" axis="1 0 0" damping="{pusher_damping}" pos ="0 0 0"/>
                     <joint name="y_dummy_slide" type="slide" axis="0 1 0" damping="{pusher_damping}" pos ="0 0 0"/>
                     <joint name="z_dummy_slide" type="slide" axis="0 0 1" damping="{pusher_damping}" pos ="0 0 0"/>
+                    <joint name="x_dummy_hinge" type="hinge" axis="1 0 0" damping="{pusher_damping}" pos ="0 0 0"/>
+                    <joint name="y_dummy_hinge" type="hinge" axis="0 1 0" damping="{pusher_damping}" pos ="0 0 0"/>
+                    <joint name="z_dummy_hinge" type="hinge" axis="0 0 1" damping="{pusher_damping}" pos ="0 0 0"/>
                     <geom name="dummy" type="box" size="{pusher_size} {pusher_size} {pusher_size}" mass="{pusher_mass}"/>
                 </body>
                 
@@ -162,6 +165,9 @@ def generate_scene(num_blocks=54,
                 <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_slide"/>
                 <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_slide"/>
                 <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_slide"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_hinge"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_hinge"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_hinge"/>
             </actuator>
             
             <sensor>
