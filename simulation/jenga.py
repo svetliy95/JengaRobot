@@ -9,6 +9,15 @@ from pyquaternion import Quaternion
 import time
 import threading
 
+# animated plot
+import pyformulas as pf
+import queue
+import matplotlib; matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib import style
+
+
 # globals
 g_blocks_num = 54
 g_x_pusher = 3
@@ -16,6 +25,28 @@ g_y_pusher = 3
 g_z_pusher = 3
 g_quat_pusher = Quaternion([1, 0, 0, 0])
 g_current_block_for_pusher = 0
+g_steps_for_pusher = 0
+g_sensor_data_queue = []
+g_sensors_data_queue_maxsize = 250
+
+
+def update_force_sensor_plot():
+    current_sensor_value = sim.data.sensordata[g_blocks_num*6]
+    if len(g_sensor_data_queue) >= g_sensors_data_queue_maxsize:
+        g_sensor_data_queue.pop(0)
+    g_sensor_data_queue.append(current_sensor_value)
+
+
+def push_forward():
+    global g_steps_for_pusher, g_x_pusher, g_y_pusher, g_z_pusher
+    x_unit_vector = [1, 0, 0]
+    if g_steps_for_pusher > 0:
+        translation = np.array(g_quat_pusher.rotate(x_unit_vector)) * one_millimeter
+        g_x_pusher -= translation[0]
+        g_y_pusher -= translation[1]
+        g_z_pusher -= translation[2]
+        g_steps_for_pusher -= 1
+        print("push")
 
 
 def point_projection_on_line(line_point1, line_point2, point):
@@ -125,6 +156,7 @@ def set_pusher_pos(sim, x, y, z, quat):
 def on_press(key):
     global g_x_pusher
     global g_y_pusher
+    global g_steps_for_pusher
 
     try:
         if key.char == '5':
@@ -145,6 +177,9 @@ def on_press(key):
             move_pusher_to_next_block()
         if key.char == ',':
             move_pusher_to_previous_block()
+        if key.char == 'p':
+            g_steps_for_pusher = 45
+            print("45")
     except AttributeError:
         if key == keyboard.Key.up:
             move_pusher_with_arrows('forward')
@@ -177,19 +212,45 @@ viewer._run_speed = 1
 t = 0
 
 # initial position of pusher
-move_pusher_to_block(5)
+move_pusher_to_block(g_current_block_for_pusher)
 
 # start keyboard listener
 start_keyboard_listener()
 
+
+fig = plt.figure()
+canvas = np.zeros((48, 64))
+screen = pf.screen(canvas, 'Force values')
+
 while True:
     t += 1
 
-    start = time.time()
+
+    push_forward()
     set_pusher_pos(sim, g_x_pusher, g_y_pusher, g_z_pusher, g_quat_pusher)
     sim.step()
-    viewer.render()
+
+
+    update_force_sensor_plot()
+
+    xs = range(-len(g_sensor_data_queue) + 1, 1)
+
+    # fig.clear()
+
+    plt.plot(xs, g_sensor_data_queue, c='black')
+
+    start = time.time()
+    fig.canvas.draw()
     stop = time.time()
+    print(stop - start)
+    image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    screen.update(image)
+
+
+
+    viewer.render()
+
 
 
     if t > 100 and os.getenv('TESTING') is not None:

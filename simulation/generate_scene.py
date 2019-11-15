@@ -31,6 +31,14 @@ pusher_kp = pusher_mass * 1000
 pusher_damping = 2 * pusher_mass * sqrt(pusher_kp/pusher_mass)  # critical damping
 pusher_starting_pos = "3 3 3"
 
+
+def generate_pusher_actuator_forces_sensor():
+    s = """<actuatorfrc actuator="x_pusher_actuator"/>
+                <actuatorfrc actuator="y_pusher_actuator"/>
+                <actuatorfrc actuator="z_pusher_actuator"/>"""
+    return s
+
+
 def generate_block_rotation_sensors(num):
     s = ""
     for i in range(num):
@@ -98,6 +106,7 @@ def generate_scene(num_blocks=54,
 
     block_position_sensors_xml = generate_block_position_sensors(num_blocks)
     block_rotation_sensors_xml = generate_block_rotation_sensors(num_blocks)
+    pusher_actuator_sensors_xml = generate_pusher_actuator_forces_sensor()
 
     MODEL_XML = f"""
         <?xml version="1.0" ?>
@@ -123,10 +132,10 @@ def generate_scene(num_blocks=54,
                 <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
                 <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 
                     width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
-                <texture name="texsponge" type="2d" file="/home/bch_svt/cartpole/simulation/sponge.png"/>   
-                <texture name="texcarpet" type="2d" file="/home/bch_svt/cartpole/simulation/carpet.png"/>  
+                <texture name="texsponge" type="2d" file="/home/bch_svt/cartpole/simulation/images/sponge.png"/>   
+                <texture name="texcarpet" type="2d" file="/home/bch_svt/cartpole/simulation/images/carpet.png"/>  
         
-                <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/marble.png"/>s
+                <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/images/marble.png"/>s
         
                 <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
                 <material name="matcarpet" texture="texcarpet"/>
@@ -162,17 +171,22 @@ def generate_scene(num_blocks=54,
             </worldbody>
             
             <actuator>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_slide"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_slide"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_slide"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_slide" name="x_pusher_actuator"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_slide" name="y_pusher_actuator"/>
+                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_slide" name="z_pusher_actuator"/>
                 <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_hinge"/>
                 <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_hinge"/>
                 <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_hinge"/>
             </actuator>
             
             <sensor>
+                
+                <!-- block position sensors -->
                 {block_position_sensors_xml}
+                <!-- block rotation sensors -->
                 {block_rotation_sensors_xml}
+                <!-- pusher force sensors -->
+                {pusher_actuator_sensors_xml}
             </sensor>
         </mujoco>
         """
