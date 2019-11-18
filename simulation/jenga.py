@@ -8,6 +8,7 @@ import numpy as np
 from pyquaternion import Quaternion
 import time
 import threading
+from multiprocessing import Process
 
 # animated plot
 import pyformulas as pf
@@ -30,6 +31,26 @@ g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 
 
+def plot_force_data():
+    fig = plt.figure()
+    canvas = np.zeros((48, 64))
+    screen = pf.screen(canvas, 'Force values')
+
+    while True:
+        fig.clear()
+        ys = g_sensor_data_queue  # necessary because of no thread synchronisation
+        xs = range(-len(ys) + 1, 1)
+        plt.plot(xs, ys, c='black')
+
+        start = time.time()
+        fig.canvas.draw()
+        stop = time.time()
+        print(stop - start)
+        image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        screen.update(image)
+
+
 def update_force_sensor_plot():
     current_sensor_value = sim.data.sensordata[g_blocks_num*6]
     if len(g_sensor_data_queue) >= g_sensors_data_queue_maxsize:
@@ -46,7 +67,6 @@ def push_forward():
         g_y_pusher -= translation[1]
         g_z_pusher -= translation[2]
         g_steps_for_pusher -= 1
-        print("push")
 
 
 def point_projection_on_line(line_point1, line_point2, point):
@@ -109,6 +129,7 @@ def move_pusher_with_arrows(direction):  # 'left', 'right', 'forward', 'backward
         g_x_pusher -= translation[0]
         g_y_pusher -= translation[1]
         g_z_pusher -= translation[2]
+
 
 def move_pusher_to_block(block_num):
     global g_x_pusher
@@ -192,7 +213,6 @@ def on_press(key):
     print(key)
 
 
-
 def start_keyboard_listener():
     listener = keyboard.Listener(
         on_press=on_press)
@@ -217,10 +237,10 @@ move_pusher_to_block(g_current_block_for_pusher)
 # start keyboard listener
 start_keyboard_listener()
 
-
-fig = plt.figure()
-canvas = np.zeros((48, 64))
-screen = pf.screen(canvas, 'Force values')
+threading.Thread(target=plot_force_data).start()
+# fig = plt.figure()
+# canvas = np.zeros((48, 64))
+# screen = pf.screen(canvas, 'Force values')
 
 while True:
     t += 1
@@ -233,19 +253,19 @@ while True:
 
     update_force_sensor_plot()
 
-    xs = range(-len(g_sensor_data_queue) + 1, 1)
+
 
     # fig.clear()
 
-    plt.plot(xs, g_sensor_data_queue, c='black')
+    # plt.plot(xs, g_sensor_data_queue, c='black')
 
     start = time.time()
-    fig.canvas.draw()
-    stop = time.time()
-    print(stop - start)
-    image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    screen.update(image)
+    # fig.canvas.draw()
+    # stop = time.time()
+    # print(stop - start)
+    # image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    # image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    # screen.update(image)
 
 
 
