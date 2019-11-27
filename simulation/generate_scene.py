@@ -1,35 +1,7 @@
 from numpy.random import normal
 from math import sqrt
-
-# global constants
-scaler = 20
-timestep = 0.01
-block_sizes = []
-
-one_millimeter = 0.001 * scaler
-
-coordinate_axes_pos_x = -0.15 * scaler
-coordinate_axes_pos_y = -0.15 * scaler
-coordinate_axes_pos_z = 0
-coordinate_axes_width = 0.005 * scaler
-coordinate_axes_height = 0.025 * scaler
-
-# empirical data
-block_length_mean = 0.0747722 * scaler
-block_length_sigma = 0.000236 * scaler
-block_width_mean = 0.02505 * scaler
-block_width_sigma = 0.000225 * scaler
-block_height_mean = 0.0146361 * scaler
-block_height_sigma = 0.00003773 * scaler
-block_mass_mean = 0.012865 * scaler**3
-block_mass_sigma = 0.00212 * scaler**3
-
-# pusher
-pusher_size = 0.005 * scaler
-pusher_mass = 0.0125 * scaler**3
-pusher_kp = pusher_mass * 1000
-pusher_damping = 2 * pusher_mass * sqrt(pusher_kp/pusher_mass)  # critical damping
-pusher_starting_pos = "3 3 3"
+from constants import *
+from pusher import Pusher
 
 
 def generate_pusher_actuator_forces_sensor():
@@ -42,13 +14,13 @@ def generate_pusher_actuator_forces_sensor():
 def generate_block_rotation_sensors(num):
     s = ""
     for i in range(num):
-        s += f"""<framequat name="block{i}_pos" objtype="body" objname="block{i}"/>\n                """
+        s += f"""<framequat name="block{i}_rotation" objtype="body" objname="block{i}"/>\n                """
     return s
 
 def generate_block_position_sensors(num):
     s = ""
     for i in range(num):
-        s += f"""<framepos name="block{i}_rotation" objtype="body" objname="block{i}"/>\n                """
+        s += f"""<framepos name="block{i}_pos" objtype="body" objname="block{i}"/>\n                """
     return s
 
 
@@ -84,17 +56,22 @@ def generate_block(number, pos_sigma, angle_sigma, spacing):
     [x, y] = normal([x, y], [pos_sigma, pos_sigma])
     [block_size_x, block_size_y, block_size_z] = normal([block_length_mean/2, block_width_mean/2, block_height_mean/2],
                                                         [block_length_sigma, block_width_sigma, block_height_sigma])
-    block_sizes.append([block_size_x, block_size_y, block_size_z])
 
     s = f'''
                 <body name="block{number}" pos="{x} {y} {z+block_height_mean/2}" euler="0 0 {angle_z}">
-                    <freejoint/>
+                    <joint type="slide" axis="1 0 0" pos ="0 0 0"/>
+                    <joint type="slide" axis="0 1 0" pos ="0 0 0"/>
+                    <joint type="slide" axis="0 0 1" pos ="0 0 0"/>
+                    <joint type="hinge" axis="1 0 0"  pos ="0 0 0"/>
+                    <joint type="hinge" axis="0 1 0" pos ="0 0 0"/>
+                    <joint type="hinge" axis="0 0 1"  pos ="0 0 0"/>
                     <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box"/>
                 </body>'''
     return s
 
 
 def generate_scene(num_blocks=54,
+                   timestep = 0.002,
                    pos_sigma=0.0005,
                    angle_sigma=0.2,
                    spacing=block_width_sigma*3):
@@ -107,7 +84,6 @@ def generate_scene(num_blocks=54,
     block_position_sensors_xml = generate_block_position_sensors(num_blocks)
     block_rotation_sensors_xml = generate_block_rotation_sensors(num_blocks)
     pusher_actuator_sensors_xml = generate_pusher_actuator_forces_sensor()
-
     MODEL_XML = f"""
         <?xml version="1.0" ?>
         <mujoco>
@@ -117,10 +93,10 @@ def generate_scene(num_blocks=54,
               
             <default class="main">
                 <default class="block">
-                    <geom rgba="0.8235 0.651 0.4745 1" condim="4"/>
+                    <geom rgba="0.8235 0.651 0.4745 1" condim="6"/>
                 </default>
             </default>
-            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5"/>
+            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5" noslip_iterations="0"/>
         
             <visual>
                 <rgba haze="0.15 0.25 0.35 1"/>
@@ -135,7 +111,7 @@ def generate_scene(num_blocks=54,
                 <texture name="texsponge" type="2d" file="/home/bch_svt/cartpole/simulation/images/sponge.png"/>   
                 <texture name="texcarpet" type="2d" file="/home/bch_svt/cartpole/simulation/images/carpet.png"/>  
         
-                <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/images/marble.png"/>s
+                <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/images/marble.png"/>
         
                 <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
                 <material name="matcarpet" texture="texcarpet"/>
@@ -155,14 +131,19 @@ def generate_scene(num_blocks=54,
                 {generate_coordinate_axes()}
                 
                 <!-- pusher -->
-                <body name="dummy" pos="{pusher_starting_pos}">
-                    <joint name="x_dummy_slide" type="slide" axis="1 0 0" damping="{pusher_damping}" pos ="0 0 0"/>
-                    <joint name="y_dummy_slide" type="slide" axis="0 1 0" damping="{pusher_damping}" pos ="0 0 0"/>
-                    <joint name="z_dummy_slide" type="slide" axis="0 0 1" damping="{pusher_damping}" pos ="0 0 0"/>
-                    <joint name="x_dummy_hinge" type="hinge" axis="1 0 0" damping="{pusher_damping}" pos ="0 0 0"/>
-                    <joint name="y_dummy_hinge" type="hinge" axis="0 1 0" damping="{pusher_damping}" pos ="0 0 0"/>
-                    <joint name="z_dummy_hinge" type="hinge" axis="0 0 1" damping="{pusher_damping}" pos ="0 0 0"/>
-                    <geom name="dummy" type="box" size="{pusher_size} {pusher_size} {pusher_size}" mass="{pusher_mass}"/>
+                <body name="pusher_base" pos="{Pusher.START_X} {Pusher.START_Y} {Pusher.START_Z}">
+                    <joint name="x_pusher_slide" type="slide" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="y_pusher_slide" type="slide" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="z_pusher_slide" type="slide" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="x_pusher_hinge" type="hinge" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="y_pusher_hinge" type="hinge" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="z_pusher_hinge" type="hinge" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <geom name="pusher" type="box" size="{Pusher.pusher_size*5} {Pusher.pusher_size} {Pusher.pusher_size}" mass="{Pusher.pusher_base_mass}"/>
+                    <site type="box" pos="-2 0 0" name="pusher_site"/>
+                    <body name="pusher" pos="-2 0 0">
+                        <joint name="x_dummy_slide" type="slide" axis="1 0 0" stiffness="{Pusher.pusher_kp}" damping="{Pusher.pusher_damping}" pos ="0 0 0"/>               
+                        <geom type="box" size="{Pusher.pusher_size} {Pusher.pusher_size} {Pusher.pusher_size}" mass="{Pusher.pusher_mass}"/>                        
+                    </body>
                 </body>
                 
                 <!-- jenga blocks -->
@@ -171,12 +152,12 @@ def generate_scene(num_blocks=54,
             </worldbody>
             
             <actuator>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_slide" name="x_pusher_actuator"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_slide" name="y_pusher_actuator"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_slide" name="z_pusher_actuator"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="x_dummy_hinge"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="y_dummy_hinge"/>
-                <position kp="{pusher_kp}" gear="1 0 0 0 0 0" joint="z_dummy_hinge"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_pusher_slide" name="x_pusher_actuator"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_pusher_slide" name="y_pusher_actuator"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_slide" name="z_pusher_actuator"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_pusher_hinge"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_pusher_hinge"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_hinge"/>
             </actuator>
             
             <sensor>
@@ -185,8 +166,9 @@ def generate_scene(num_blocks=54,
                 {block_position_sensors_xml}
                 <!-- block rotation sensors -->
                 {block_rotation_sensors_xml}
+                <force site="pusher_site"/>
                 <!-- pusher force sensors -->
-                {pusher_actuator_sensors_xml}
+                <!-- {pusher_actuator_sensors_xml} -->
             </sensor>
         </mujoco>
         """
