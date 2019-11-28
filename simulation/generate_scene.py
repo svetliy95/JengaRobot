@@ -139,8 +139,8 @@ def generate_scene(num_blocks=54,
                     <joint name="y_pusher_hinge" type="hinge" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="z_pusher_hinge" type="hinge" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <geom name="pusher" type="box" size="{Pusher.pusher_size*5} {Pusher.pusher_size} {Pusher.pusher_size}" mass="{Pusher.pusher_base_mass}"/>
-                    <site type="box" pos="-2 0 0" name="pusher_site"/>
-                    <body name="pusher" pos="-2 0 0">
+                    <site type="box" pos="{-pusher_spring_length} 0 0" name="pusher_site"/>
+                    <body name="pusher" pos="{-pusher_spring_length} 0 0">
                         <joint name="x_dummy_slide" type="slide" axis="1 0 0" stiffness="{Pusher.pusher_kp}" damping="{Pusher.pusher_damping}" pos ="0 0 0"/>               
                         <geom type="box" size="{Pusher.pusher_size} {Pusher.pusher_size} {Pusher.pusher_size}" mass="{Pusher.pusher_mass}"/>                        
                     </body>

@@ -7,9 +7,9 @@ from threading import Thread
 
 class Pusher():
     # pusher start pos
-    START_X = 3
-    START_Y = 0
-    START_Z = 0.1
+    START_X = 0.15 * scaler
+    START_Y = 0 * scaler
+    START_Z = 0.005 * scaler
 
     # pusher parameter
     pusher_size = 0.005 * scaler
@@ -26,9 +26,9 @@ class Pusher():
     def __init__(self, sim):
         self.sim = sim
         self.blocks_num = g_blocks_num
-        self.x = self.START_X
-        self.y = self.START_Y
-        self.z = self.START_Z
+        self.x = 0
+        self.y = 0
+        self.z = 0
         self.q = Quaternion(1, 0, 0, 0)
         self.current_block = 0
 
@@ -36,7 +36,6 @@ class Pusher():
         self.speed = 0.01  # in mm/timestep
         self.translation_to_push = np.zeros(3)  # in mm
         self.t = 0
-
 
     def update_position(self, t):
         self.t = t
@@ -86,34 +85,36 @@ class Pusher():
                                 self.sim.data.sensordata[3 * self.blocks_num + block_num * 4 + 3])
         block_x_face_normal_vector = block_quat.rotate(x_unit_vector)
         target_x = self.sim.data.sensordata[block_num * 3 + 0] - self.START_X + (
-                    block_length_mean / 2 + self.pusher_size + 2 + gap) * block_x_face_normal_vector[0]
+                    block_length_mean / 2 + self.pusher_size + pusher_spring_length + gap) * block_x_face_normal_vector[0]
         target_y = self.sim.data.sensordata[block_num * 3 + 1] - self.START_Y + (
-                    block_length_mean / 2 + self.pusher_size + 2 + gap) * block_x_face_normal_vector[1]
+                    block_length_mean / 2 + self.pusher_size + pusher_spring_length + gap) * block_x_face_normal_vector[1]
         target_z = self.sim.data.sensordata[block_num * 3 + 2] - self.START_Z + (
-                    block_length_mean / 2 + self.pusher_size + 2 + gap) * block_x_face_normal_vector[2]
+                    block_length_mean / 2 + self.pusher_size + pusher_spring_length + gap) * block_x_face_normal_vector[2]
 
-        target = np.array([target_x, target_y, target_z])
+        target = np.array([target_x, target_y, target_z]) + np.array(block_x_face_normal_vector) * block_length_mean
 
         # move pusher backwards to avoid collisions
         self.move_along_own_axis('x', block_length_mean)
-        time.sleep(0.2)
+        self._sleep_timesteps(30)
 
         # move pusher along its own y axis first to avoid collisions
         self.move_along_own_axis_towards_point('y', target)
-        time.sleep(0.2)
+        self._sleep_timesteps(30)
 
         # rotate pusher towards the block
         self.q = block_quat
-        time.sleep(0.2)
+        # self._sleep_timesteps(30)
 
         # move pusher along its own z axis first to avoid collisions
         self.move_along_own_axis_towards_point('z', target)
-        time.sleep(0.2)
+        # self._sleep_timesteps(30)
 
         # move pusher along its own y axis first to avoid collisions (needed by side changes)
         self.move_along_own_axis_towards_point('y', target)
-        time.sleep(0.2)
+        self._sleep_timesteps(30)
 
+        # move towards real target
+        target = np.array([target_x, target_y, target_z])
         self.set_position(target)
 
     def move_pusher_to_next_block(self):
@@ -212,3 +213,8 @@ class Pusher():
         while self.t < current_timestep + n:
             time.sleep(0.05)
 
+
+    def _sleep_simtime(self, t):
+        current_time = self.t * g_timestep
+        while self.t * g_timestep < current_time + t:
+            time.sleep(0.05)

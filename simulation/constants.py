@@ -1,9 +1,9 @@
 # simulation
-g_timestep = 0.002
+g_timestep = 0.003
 
 # tower
 g_blocks_num = 54
-scaler = 20
+scaler = 50
 one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
@@ -30,6 +30,7 @@ z_unit_vector = [0, 0, 1]
 
 # sensing
 timesteps_transient = 75
-force_threshold = 1000
+# force_threshold = 200000
 displacement_threshold = 0.3
+pusher_spring_length = 0.1 * scaler
 

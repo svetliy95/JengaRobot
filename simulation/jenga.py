@@ -15,6 +15,7 @@ import matplotlib; matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from constants import *
 from pusher import Pusher
+from tower import Tower
 
 
 # globals
@@ -34,7 +35,7 @@ def plot_force_data():
         plt.plot(xs, ys, c='black')
         fig.canvas.draw()
         stop = time.time()
-        image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         screen.update(image)
 
@@ -82,14 +83,22 @@ def on_press(key):
 
 
 def check_all_blocks():
+    pusher.move_pusher_to_block(0)
+    time.sleep(1)
     loose_blocks = []
+    force_threshold = 240000
+    angle_threshold = 3
     for i in range(g_blocks_num - 3):
         total_displacement = 0
         fl = 0
+
+        if i % 3 == 0:
+            force_threshold -= 10500
+
         for j in range(50):
             force, displacement = pusher.push()
             total_displacement += displacement
-            if force > force_threshold:
+            if force > force_threshold or tower.get_angle_of_highest_block_to_ground() > angle_threshold:
                 fl = 1
                 break
         if fl == 0:
@@ -124,7 +133,7 @@ viewer._run_speed = 1
 t = 0
 
 # initial position of pusher
-pusher.move_pusher_to_block(0)
+# pusher.move_pusher_to_block(0)
 
 # start keyboard listener
 start_keyboard_listener()
@@ -138,22 +147,37 @@ plotting_thread.start()
 while True:
     t += 1
 
-
-    # push_forward()
     pusher.update_position(t)
     start = time.time()
     sim.step()
     stop = time.time()
+
+    # real-time scaler
     # if(t % 10 == 0):
     #     print(g_timestep/(stop - start))
 
     update_force_sensor_plot()
     viewer.render()
 
+    tower = Tower(sim)
+    # print(tower.get_position(0))
+    print(tower.get_angle_to_ground(53))
+
+
     if t == 100:
         # start block checking
         checking_thread = Thread(target=check_all_blocks)
         checking_thread.start()
+
+
+
+    # calculate mean penetration
+    # penetrations = []
+    # for x in sim.data.contact:
+    #     if x.dist != 0.0:
+    #         penetrations.append(x.dist)
+    #
+    # print(np.mean(penetrations))
 
 
 
