@@ -94,7 +94,7 @@ def generate_scene(num_blocks=54,
               
             <default class="main">
                 <default class="block">
-                    <geom rgba="0.8235 0.651 0.4745 1" condim="6" friction="0.4 0.005 0.0001"/>
+                    <geom rgba="0.8235 0.651 0.4745 1" condim="6" friction="0.4 0.005 0.0001" material="block_mat"/>
                 </default>
             </default>
             <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5" noslip_iterations="0"/>
@@ -106,18 +106,12 @@ def generate_scene(num_blocks=54,
             </visual>
         
             <asset>
+                <texture name="block_text" type="cube" fileleft="/home/bch_svt/cartpole/simulation/images/block_test_left.png"/>
+                <material name="block_mat" texture="block_text"/>
                 <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
                 <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 
                     width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
-                <texture name="texsponge" type="2d" file="/home/bch_svt/cartpole/simulation/images/sponge.png"/>   
-                <texture name="texcarpet" type="2d" file="/home/bch_svt/cartpole/simulation/images/carpet.png"/>  
-        
-                <texture name="texmarble" type="cube" file="/home/bch_svt/cartpole/simulation/images/marble.png"/>
-        
                 <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
-                <material name="matcarpet" texture="texcarpet"/>
-                <material name="matsponge" texture="texsponge" specular="0.3"/>
-                <material name="matmarble" texture="texmarble" rgba=".7 .7 .7 1"/>
             </asset>
         
             <worldbody>
