@@ -14,14 +14,24 @@ coordinate_axes_width = 0.005 * scaler
 coordinate_axes_height = 0.025 * scaler
 
 # empirical data
-block_length_mean = 0.0747722 * scaler
-block_length_sigma = 0.000236 * scaler
-block_width_mean = 0.02505 * scaler
-block_width_sigma = 0.000225 * scaler
-block_height_mean = 0.0146361 * scaler
-block_height_sigma = 0.00003773 * scaler
+block_length_mean = 0.0750283018867925 * scaler
+block_length_sigma = 0.000278476182167942 * scaler
+block_length_min = 0.0744 * scaler
+block_length_max = 0.0757 * scaler
+
+block_width_mean = 0.0249274074074074 * scaler
+block_width_sigma = 0.000245396753720476 * scaler
+block_width_min = 0.02405 * scaler
+block_width_max = 0.02535 * scaler
+
+block_height_mean = 0.0148412037037037 * scaler
+block_height_sigma = 0.000175380812576479 * scaler
+block_height_min = 0.0145 * scaler
+block_height_max = 0.0152 * scaler
+
 block_mass_mean = 0.012865 * scaler**3
 block_mass_sigma = 0.00212 * scaler**3
+
 
 # vectors
 x_unit_vector = [1, 0, 0]
