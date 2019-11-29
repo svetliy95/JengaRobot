@@ -29,8 +29,10 @@ block_height_sigma = 0.000175380812576479 * scaler
 block_height_min = 0.0145 * scaler
 block_height_max = 0.0152 * scaler
 
-block_mass_mean = 0.012865 * scaler**3
-block_mass_sigma = 0.00212 * scaler**3
+block_mass_mean = 0.0192679811320755 * scaler**3
+block_mass_sigma = 0.001406754796448 * scaler**3
+block_mass_min = 0.015876 * scaler**3
+block_mass_max = 0.022995 * scaler**3
 
 
 # vectors
