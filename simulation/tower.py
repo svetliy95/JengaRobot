@@ -2,6 +2,7 @@ import numpy as np
 from constants import *
 from pyquaternion import Quaternion
 from numpy.random import normal
+from scipy.stats import truncnorm
 
 class Tower:
     pos = np.array([0, 0, 0])
@@ -9,6 +10,7 @@ class Tower:
     block_prefix = "block"
     sim = None
     starting_positions = []
+    block_sizes = []
 
     def __init__(self, sim):
         self.sim = sim
@@ -67,6 +69,18 @@ class Tower:
     def generate_block(number, pos_sigma, angle_sigma, spacing):
         # TODO spacing automatic calculation
 
+        a = (block_height_min - block_height_mean) / block_height_sigma
+        b = (block_height_max - block_height_mean) / block_height_sigma
+        height_distribution = truncnorm(a, b, loc=block_height_mean, scale=block_height_sigma)
+
+        a = (block_width_min - block_width_mean) / block_width_sigma
+        b = (block_width_max - block_width_mean) / block_width_sigma
+        width_distribution = truncnorm(a, b, loc=block_width_mean, scale=block_width_sigma)
+
+        a = (block_length_min - block_length_mean) / block_length_sigma
+        b = (block_length_max - block_length_mean) / block_length_sigma
+        length_distribution = truncnorm(a, b, loc=block_length_mean, scale=block_length_sigma)
+
         if number % 6 < 3:  # even level
             x = 0
             y = -block_width_mean + (number % 3) * block_width_mean
@@ -83,11 +97,12 @@ class Tower:
         # add disturbance to mass, position and sizes
         mass = normal(block_mass_mean, block_mass_sigma)
         [x, y] = normal([x, y], [pos_sigma, pos_sigma])
-        [block_size_x, block_size_y, block_size_z] = normal(
-            [block_length_mean / 2, block_width_mean / 2, block_height_mean / 2],
-            [block_length_sigma, block_width_sigma, block_height_sigma])
+        [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs()/2, width_distribution.rvs()/2, height_distribution.rvs()/2]
+        print([block_size_x, block_size_y, block_size_z])
 
         Tower.starting_positions.append(np.array([x, y, z + block_height_mean / 2]))
+        Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))
+        # print(block_size_z * 2 / one_millimeter)
 
         s = f'''
                     <body name="block{number}" pos="{x} {y} {z + block_height_mean / 2}" euler="0 0 {angle_z}">
