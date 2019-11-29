@@ -2,6 +2,7 @@ from numpy.random import normal
 from math import sqrt
 from constants import *
 from pusher import Pusher
+from tower import Tower
 
 
 def generate_pusher_actuator_forces_sensor():
@@ -79,7 +80,7 @@ def generate_scene(num_blocks=54,
 
     blocks_xml = ""
     for i in range(num_blocks):
-        blocks_xml += generate_block(i, pos_sigma, angle_sigma, spacing)
+        blocks_xml += Tower.generate_block(i, pos_sigma, angle_sigma, spacing)
 
     block_position_sensors_xml = generate_block_position_sensors(num_blocks)
     block_rotation_sensors_xml = generate_block_rotation_sensors(num_blocks)
@@ -93,7 +94,7 @@ def generate_scene(num_blocks=54,
               
             <default class="main">
                 <default class="block">
-                    <geom rgba="0.8235 0.651 0.4745 1" condim="6"/>
+                    <geom rgba="0.8235 0.651 0.4745 1" condim="6" friction="0.4 0.005 0.0001"/>
                 </default>
             </default>
             <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5" noslip_iterations="0"/>
