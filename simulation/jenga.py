@@ -142,6 +142,9 @@ start_keyboard_listener()
 plotting_thread = Thread(target=plot_force_data)
 plotting_thread.start()
 
+for i in range(Tower.block_num):
+    print(len(Tower.block_sizes))
+
 
 
 while True:
@@ -167,7 +170,7 @@ while True:
     if t == 100:
         # start block checking
         checking_thread = Thread(target=check_all_blocks)
-        checking_thread.start()
+        # checking_thread.start()
 
 
 

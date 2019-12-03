@@ -112,7 +112,7 @@ class Tower:
                         <joint type="hinge" axis="1 0 0"  pos ="0 0 0"/>
                         <joint type="hinge" axis="0 1 0" pos ="0 0 0"/>
                         <joint type="hinge" axis="0 0 1"  pos ="0 0 0"/>
-                        <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box"/>
+                        <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box" material="mat_block{number}"/>
                     </body>'''
         return s
 

@@ -5,6 +5,15 @@ from pusher import Pusher
 from tower import Tower
 
 
+def generate_textures_and_materials_assets():
+    s = ''
+    for i in range(g_blocks_num):
+        s += f"""<texture name="text_block{i}" type="cube" fileright="/home/bch_svt/cartpole/simulation/images/texture_block{i}_right.png" fileleft="/home/bch_svt/cartpole/simulation/images/texture_block{i}_left.png"/>
+                <material name="mat_block{i}" texture="text_block{i}"/>
+                """
+    return s
+
+
 def generate_pusher_actuator_forces_sensor():
     s = """<actuatorfrc actuator="x_pusher_actuator"/>
                 <actuatorfrc actuator="y_pusher_actuator"/>
@@ -85,6 +94,7 @@ def generate_scene(num_blocks=54,
     block_position_sensors_xml = generate_block_position_sensors(num_blocks)
     block_rotation_sensors_xml = generate_block_rotation_sensors(num_blocks)
     pusher_actuator_sensors_xml = generate_pusher_actuator_forces_sensor()
+    textures_and_material_assets = generate_textures_and_materials_assets()
     MODEL_XML = f"""
         <?xml version="1.0" ?>
         <mujoco>
@@ -94,7 +104,7 @@ def generate_scene(num_blocks=54,
               
             <default class="main">
                 <default class="block">
-                    <geom rgba="0.8235 0.651 0.4745 1" condim="6" friction="0.4 0.005 0.0001" material="block_mat"/>
+                    <geom rgba="0.8235 0.651 0.4745 1" condim="6" friction="0.4 0.005 0.0001"/>
                 </default>
             </default>
             <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5" noslip_iterations="0"/>
@@ -106,8 +116,11 @@ def generate_scene(num_blocks=54,
             </visual>
         
             <asset>
-                <texture name="block_text" type="cube" fileleft="/home/bch_svt/cartpole/simulation/images/block_test_left.png"/>
-                <material name="block_mat" texture="block_text"/>
+                <!-- textures and corresponding materials for blocks -->
+                {textures_and_material_assets}
+                
+                <texture name="tex_coord_frame" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture.png"/>
+                <material name="mat_coord_frame" texture="tex_coord_frame"/>
                 <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
                 <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 
                     width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
@@ -121,6 +134,9 @@ def generate_scene(num_blocks=54,
                 
                 <!-- floor -->
                 <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
+                
+                <-- dummy body with a tag -->
+                <geom name="coordinate_frame_tag" type="box" size="{0.03*scaler} {0.03*scaler} 0.002" pos="{-0.1*scaler} {-0.1*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame"/>
                 
                 <!-- coordinate axes -->
                 {generate_coordinate_axes()}
