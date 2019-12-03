@@ -128,6 +128,9 @@ def generate_scene(num_blocks=54,
             </asset>
         
             <worldbody>
+                <!-- camera -->
+                <!-- <camera name="main1" mode="targetbody" target="block53" pos="1.3 -1.3 2.0" fovy="42.5"/> -->
+                
                 <!-- lighting -->
                 <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
                 <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>

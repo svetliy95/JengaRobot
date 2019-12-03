@@ -1,4 +1,4 @@
-from mujoco_py import load_model_from_xml, MjSim, MjViewer
+from mujoco_py import load_model_from_xml, MjSim, MjViewer, MjRenderContextOffscreen
 from pynput import keyboard
 import os
 from generate_scene import generate_scene
@@ -17,10 +17,13 @@ from constants import *
 from pusher import Pusher
 from tower import Tower
 
+from cv2 import imwrite
+
 
 # globals
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
+screenshot_fl = False
 
 
 def plot_force_data():
@@ -70,6 +73,8 @@ def on_press(key):
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
             pusher.push()
+        if key.char == 'q':
+            take_screenshot()
     except AttributeError:
         if key == keyboard.Key.up:
             pusher.move_pusher_in_direction('forward')
@@ -106,6 +111,16 @@ def check_all_blocks():
         pusher.move_pusher_to_next_block()
         time.sleep(1)
     print(loose_blocks)
+
+def take_screenshot():
+    global screenshot_fl
+    screenshot_fl = True
+    # data = viewer.read_pixels(420, 300, depth=False)
+    # if data is not None:
+    #     print("Hi!")
+    #     imwrite('./screenshots/screenshot.png', data)
+
+
 
 
 
@@ -161,10 +176,16 @@ while True:
 
     update_force_sensor_plot()
     viewer.render()
+    if screenshot_fl:
+        data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
+        print(data.shape)
+        data[:, :,  [0, 2]] = data[:, :, [2, 0]]
+        imwrite('./screenshots/screenshot.png', data)
+        screenshot_fl = False
 
     tower = Tower(sim)
     # print(tower.get_position(0))
-    print(tower.get_angle_to_ground(53))
+    # print(tower.get_angle_to_ground(53))
 
 
     if t == 100:
