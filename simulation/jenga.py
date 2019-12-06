@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from constants import *
 from pusher import Pusher
 from tower import Tower
-
+from math import sin, cos, radians
 from cv2 import imwrite
 
 
@@ -25,6 +25,29 @@ g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
 
+# floating body
+fb_x = -3
+fb_y = -5
+fb_z = 2
+fb_yaw = 0
+fb_pitch = 0
+fb_roll = 0
+
+
+def get_camera_pose():
+    # TODO: return orientation
+    elevation = radians(-viewer.cam.elevation)
+    azimuth = radians(viewer.cam.azimuth)
+    lookat = np.array(viewer.cam.lookat)
+    distance = viewer.cam.distance
+
+    z = lookat[2] + sin(elevation) * distance
+    proj_dist = cos(elevation) * distance
+
+    x = lookat[0] - proj_dist * cos(azimuth)
+    y = lookat[1] - proj_dist * sin(azimuth)
+
+    return np.array([x, y, z, 0, 0, 0])
 
 def plot_force_data():
     fig = plt.figure()
@@ -50,7 +73,14 @@ def update_force_sensor_plot():
     g_sensor_data_queue.append(current_sensor_value)
 
 
+def start_keyboard_listener():
+    listener = keyboard.Listener(
+        on_press=on_press)
+    listener.start()
+
+
 def on_press(key):
+    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll
 
     try:
         if key.char == '5':
@@ -64,9 +94,11 @@ def on_press(key):
         if key.char == '9':
             Thread(target=pusher.move_pusher_to_block, args=(9,)).start()
         if key.char == '+':
-            pusher.move_pusher_in_direction('up')
+            # pusher.move_pusher_in_direction('up')
+            fb_z += 0.1
         if key.char == '-':
-            pusher.move_pusher_in_direction('down')
+            # pusher.move_pusher_in_direction('down')
+            fb_z -= 0.1
         if key.char == '.':
             pusher.move_pusher_to_next_block()
         if key.char == ',':
@@ -77,13 +109,17 @@ def on_press(key):
             take_screenshot()
     except AttributeError:
         if key == keyboard.Key.up:
-            pusher.move_pusher_in_direction('forward')
+            # pusher.move_pusher_in_direction('forward')
+            fb_x -= 0.1
         if key == keyboard.Key.down:
-            pusher.move_pusher_in_direction('backwards')
+            # pusher.move_pusher_in_direction('backwards')
+            fb_x += 0.1
         if key == keyboard.Key.left:
-            pusher.move_pusher_in_direction('left')
+            # pusher.move_pusher_in_direction('left')
+            fb_y -= 0.1
         if key == keyboard.Key.right:
-            pusher.move_pusher_in_direction('right')
+            # pusher.move_pusher_in_direction('right')
+            fb_y += 0.1
     print(key)
 
 
@@ -112,31 +148,18 @@ def check_all_blocks():
         time.sleep(1)
     print(loose_blocks)
 
+
 def take_screenshot():
     global screenshot_fl
     screenshot_fl = True
-    # data = viewer.read_pixels(420, 300, depth=False)
-    # if data is not None:
-    #     print("Hi!")
-    #     imwrite('./screenshots/screenshot.png', data)
 
 
-
-
-
-
-
-
-def start_keyboard_listener():
-    listener = keyboard.Listener(
-        on_press=on_press)
-    listener.start()
-
-
+# initialize simulation
 model = load_model_from_xml(generate_scene(g_blocks_num, g_timestep))
 sim = MjSim(model)
 viewer = MjViewer(sim)
 pusher = Pusher(sim)
+tower = Tower(sim)
 
 # start with specific camera position
 viewer.cam.elevation = -7
@@ -147,21 +170,14 @@ viewer.cam.distance = 15
 viewer._run_speed = 1
 t = 0
 
-# initial position of pusher
-# pusher.move_pusher_to_block(0)
-
 # start keyboard listener
 start_keyboard_listener()
 
 # start force data plotting
-plotting_thread = Thread(target=plot_force_data)
-plotting_thread.start()
+# plotting_thread = Thread(target=plot_force_data)
+# plotting_thread.start()
 
-for i in range(Tower.block_num):
-    print(len(Tower.block_sizes))
-
-
-
+# simulation loop
 while True:
     t += 1
 
@@ -170,22 +186,20 @@ while True:
     sim.step()
     stop = time.time()
 
-    # real-time scaler
+    # print the real-time scaler
     # if(t % 10 == 0):
     #     print(g_timestep/(stop - start))
 
-    update_force_sensor_plot()
     viewer.render()
     if screenshot_fl:
         data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
-        print(data.shape)
         data[:, :,  [0, 2]] = data[:, :, [2, 0]]
         imwrite('./screenshots/screenshot.png', data)
         screenshot_fl = False
 
-    tower = Tower(sim)
-    # print(tower.get_position(0))
+
     # print(tower.get_angle_to_ground(53))
+    # print(np.array_str(get_camera_pose()/one_millimeter, precision=3, suppress_small=True))
 
 
     if t == 100:
@@ -193,6 +207,14 @@ while True:
         checking_thread = Thread(target=check_all_blocks)
         # checking_thread.start()
 
+    sim.data.ctrl[-1] = fb_yaw
+    sim.data.ctrl[-2] = fb_roll
+    sim.data.ctrl[-3] = fb_pitch
+    sim.data.ctrl[-4] = fb_z
+    sim.data.ctrl[-5] = fb_y
+    sim.data.ctrl[-6] = fb_x
+
+    print(np.array_str((sim.data.body_xpos[-1] + np.array([-0.03*scaler*0.8, -0.03*scaler*0.8, +0.03*scaler]))/one_millimeter, precision=3, suppress_small=True))
 
 
     # calculate mean penetration
@@ -207,4 +229,4 @@ while True:
 
     if t > 100 and os.getenv('TESTING') is not None:
         break
-plotting_thread.join()
+# plotting_thread.join()

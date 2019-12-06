@@ -98,7 +98,6 @@ class Tower:
         mass = normal(block_mass_mean, block_mass_sigma)
         [x, y] = normal([x, y], [pos_sigma, pos_sigma])
         [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs()/2, width_distribution.rvs()/2, height_distribution.rvs()/2]
-        print([block_size_x, block_size_y, block_size_z])
 
         Tower.starting_positions.append(np.array([x, y, z + block_height_mean / 2]))
         Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))

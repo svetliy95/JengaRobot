@@ -118,9 +118,14 @@ def generate_scene(num_blocks=54,
             <asset>
                 <!-- textures and corresponding materials for blocks -->
                 {textures_and_material_assets}
-                
+                <texture name="tex_floating" type="cube" fileright="/home/bch_svt/cartpole/simulation/images/floating_object_texture.png"/>
+                <material name="mat_floating" texture="tex_floating"/>
                 <texture name="tex_coord_frame" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture.png"/>
                 <material name="mat_coord_frame" texture="tex_coord_frame"/>
+                <texture name="tex_coord_frame2" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture2.png"/>
+                <material name="mat_coord_frame2" texture="tex_coord_frame2"/>
+                <texture name="tex_coord_frame3" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture3.png"/>
+                <material name="mat_coord_frame3" texture="tex_coord_frame3"/>
                 <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
                 <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 
                     width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
@@ -129,17 +134,20 @@ def generate_scene(num_blocks=54,
         
             <worldbody>
                 <!-- camera -->
-                <!-- <camera name="main1" mode="targetbody" target="block53" pos="1.3 -1.3 2.0" fovy="42.5"/> -->
+                <camera name="main1" mode="targetbody" target="block53" pos="1.3 -1.3 2.0" fovy="42.5"/>
                 
                 <!-- lighting -->
                 <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
                 <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>
-                
                 <!-- floor -->
                 <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
                 
-                <-- dummy body with a tag -->
-                <geom name="coordinate_frame_tag" type="box" size="{0.03*scaler} {0.03*scaler} 0.002" pos="{-0.1*scaler} {-0.1*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame"/>
+                <!-- coordinate system tag -->
+                <geom name="coordinate_frame_tag" type="box" size="{0.03*scaler} {0.03*scaler} 0.01" pos="{-0.1*scaler} {-0.1*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame" euler="0 0 90"/>
+                <!-- 
+                <geom name="coordinate_frame_tag2" type="box" size="{0.03*scaler} {0.03*scaler} 0.002" pos="{-0.04*scaler} {-0.1*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame2" euler="0 0 90"/>
+                <geom name="coordinate_frame_tag3" type="box" size="{0.03*scaler} {0.03*scaler} 0.002" pos="{-0.1*scaler} {-0.04*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame3" euler="0 0 90"/>
+                -->                    
                 
                 <!-- coordinate axes -->
                 {generate_coordinate_axes()}
@@ -161,7 +169,19 @@ def generate_scene(num_blocks=54,
                 </body>
                 
                 <!-- jenga blocks -->
-                {blocks_xml} 
+                {blocks_xml}
+                
+                
+                <!-- floating body with tag -->
+                <body name="floating_body" pos="-1 -5 3">
+                    <joint name="x_floating_slide" type="slide" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="y_floating_slide" type="slide" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="z_floating_slide" type="slide" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="x_floating_hinge" type="hinge" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="y_floating_hinge" type="hinge" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <joint name="z_floating_hinge" type="hinge" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                    <geom name="floating" type="box" size="{0.03*scaler} {0.03*scaler} {0.03*scaler}" mass="{Pusher.pusher_base_mass}" material="mat_floating" euler= "0 -90 0"/>
+                </body>
         
             </worldbody>
             
@@ -172,6 +192,13 @@ def generate_scene(num_blocks=54,
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_pusher_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_pusher_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_hinge"/>
+                
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_slide"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_floating_slide"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_floating_slide"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_hinge"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_floating_hinge"/>
+                <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_floating_hinge"/>
             </actuator>
             
             <sensor>

@@ -1,6 +1,7 @@
 import numpy as np
 from math import cos, sin, pi
 
+
 def pose2matrix(pose):
     X = pose[0]
     Y = pose[1]
@@ -9,26 +10,26 @@ def pose2matrix(pose):
     B = pose[4]
     C = pose[5]
 
-    T = np.matrix([[1, 0, 0, X],
-                   [0, 1, 0, Y],
-                   [0, 0, 1, Z],
+    T = np.array([[1, 0, 0, X],
+                  [0, 1, 0, Y],
+                  [0, 0, 1, Z],
+                  [0, 0, 0, 1]])
+    Rz = np.array([[cos(A), -sin(A), 0, 0],
+                   [sin(A), cos(A), 0, 0],
+                   [0, 0, 1, 0],
                    [0, 0, 0, 1]])
-    Rz = np.matrix([[cos(A), -sin(A), 0, 0],
-                    [sin(A), cos(A), 0, 0],
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1]])
 
-    Ry = np.matrix([[cos(B), 0, sin(B), 0],
-                    [0, 1, 0, 0],
-                    [-sin(B), 0, cos(B), 0],
-                    [0, 0, 0, 1]])
+    Ry = np.array([[cos(B), 0, sin(B), 0],
+                   [0, 1, 0, 0],
+                   [-sin(B), 0, cos(B), 0],
+                   [0, 0, 0, 1]])
 
-    Rx = np.matrix([[1, 0, 0, 0],
-                    [0, cos(C), -sin(C), 0],
-                    [0, sin(C), cos(C), 0],
-                    [0, 0, 0, 1]])
+    Rx = np.array([[1, 0, 0, 0],
+                   [0, cos(C), -sin(C), 0],
+                   [0, sin(C), cos(C), 0],
+                   [0, 0, 0, 1]])
 
-    return T*Rz*Ry*Rx
+    return T @ Rz @ Ry @ Rx
 
 
 # Ausgabe von Pose in X, Y, Z, Rz, Ry', Rx''
@@ -53,19 +54,40 @@ def matrix2pose(a_matrix):
     l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WA, l_WB, l_WC])
     return l_pose
 
+
 def getRotationMatrix_90_x():
-    return np.matrix([[-1, 0, 0, 0],
-                    [0, 0, -1, 0],
-                    [0, -1, 0, 0],
-                    [0, 0, 0, 1]])
+    return np.array([[1, 0, 0, 0],
+                     [0, -1, 0, 0],
+                     [0, 0, -1, 0],
+                     [0, 0, 0, 1]])
+
+
+def getRotationMatrix_90_y():
+    return np.array([[-1, 0, 0, 0],
+                     [0, 1, 0, 0],
+                     [0, 0, -1, 0],
+                     [0, 0, 0, 1]])
+
+
+def getRotationMatrix_90_z():
+    return np.array([[0, -1, 0, 0],
+                     [1, 0, 0, 0],
+                     [0, 0, 1, 0],
+                     [0, 0, 0, 1]])
+
+
+def getRotationMatrix_180_x():
+    return np.array([[1, 0, 0, 0],
+                     [0, -1, 0, 0],
+                     [0, 0, -1, 0],
+                     [0, 0, 0, 1]])
+
 
 def getDrone2CameraTransformMatrix():
-    return np.matrix([[-1, 0, 0, 0],
-                    [0, 0, -1, 140],
-                    [0, -1, 0, 280],
-                    [0, 0, 0, 1]])
-					
-					
+    return np.array([[-1, 0, 0, 0],
+                     [0, 0, -1, 140],
+                     [0, -1, 0, 280],
+                     [0, 0, 0, 1]])
 
 
 # test
@@ -88,5 +110,3 @@ if __name__ == '__main__':
 
     pose5 = matrix2pose(matrix2)
     print(pose5)
-
-    print()

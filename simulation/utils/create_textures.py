@@ -15,7 +15,7 @@ def generate_texture_with_tag(block_num, side, path):
         tag_id = 2 * block_num + 1
 
     tag_name = "tag36_11_" + str(tag_id).zfill(5) + ".png"
-    tag_img = Image.open('../resources/tag36h11/' + tag_name)
+    tag_img = Image.open('../../resources/tag36h11/' + tag_name)
     tag_img = tag_img.resize((tag_size, tag_size), Image.NONE)
     tag_w, tag_h = tag_img.size
 
@@ -37,20 +37,29 @@ def generate_texture_with_tag(block_num, side, path):
     return res
 
 def generate_texture_for_coordinate_frame():
-    tag_id = 255
+    tag_id = 257
     tag_name = "tag36_11_" + str(tag_id).zfill(5) + ".png"
-    tag_img = Image.open('../resources/tag36h11/' + tag_name)
+    tag_img = Image.open('../../resources/tag36h11/' + tag_name)
     tag_img = tag_img.resize((1000, 1000))
-    tag_img.save("../simulation/images/coordinate_frame_texture.png")
+    tag_img.save("../images/coordinate_frame_texture3.png")
+
+def generate_square_texture():
+    tag_id = 300
+    tag_name = "tag36_11_" + str(tag_id).zfill(5) + ".png"
+    tag_img = Image.open('../../resources/tag36h11/' + tag_name)
+    # rotate tag
+    tag_img = tag_img.rotate(90)
+    tag_img = tag_img.resize((1000, 1000))
+    tag_img.save("../images/floating_object_texture.png")
 
 
 if __name__ == "__main__":
-    for i in range(54):
-        generate_texture_with_tag(i, 'left', "../simulation/images/")
-        generate_texture_with_tag(i, 'right', "../simulation/images/")
+    # for i in range(54):
+    #     generate_texture_with_tag(i, 'left', "../simulation/images/")
+    #     generate_texture_with_tag(i, 'right', "../simulation/images/")
 
-    generate_texture_for_coordinate_frame()
-
+    # generate_texture_for_coordinate_frame()
+    generate_square_texture()
 
 
 
