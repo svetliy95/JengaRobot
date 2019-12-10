@@ -5,7 +5,7 @@ import sys
 def generate_texture_with_tag(block_num, side, path):
     assert side in ['left', 'right'], "Wrong attribute side: ".format(side)
 
-    tag_size = 250
+    tag_size = 300
     width = 300
     height = 500
 
@@ -54,12 +54,12 @@ def generate_square_texture():
 
 
 if __name__ == "__main__":
-    # for i in range(54):
-    #     generate_texture_with_tag(i, 'left', "../simulation/images/")
-    #     generate_texture_with_tag(i, 'right', "../simulation/images/")
+     for i in range(54):
+         generate_texture_with_tag(i, 'left', "../images/")
+         generate_texture_with_tag(i, 'right', "../images/")
 
     # generate_texture_for_coordinate_frame()
-    generate_square_texture()
+    # generate_square_texture()
 
 
 

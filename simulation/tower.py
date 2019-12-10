@@ -101,7 +101,7 @@ class Tower:
 
         Tower.starting_positions.append(np.array([x, y, z + block_height_mean / 2]))
         Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))
-        # print(block_size_z * 2 / one_millimeter)
+        print(f"Block # {number}: " + str(Tower.block_sizes[-1]))
 
         s = f'''
                     <body name="block{number}" pos="{x} {y} {z + block_height_mean / 2}" euler="0 0 {angle_z}">

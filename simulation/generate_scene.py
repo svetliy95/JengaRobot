@@ -180,7 +180,7 @@ def generate_scene(num_blocks=54,
                     <joint name="x_floating_hinge" type="hinge" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="y_floating_hinge" type="hinge" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="z_floating_hinge" type="hinge" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                    <geom name="floating" type="box" size="{0.03*scaler} {0.03*scaler} {0.03*scaler}" mass="{Pusher.pusher_base_mass}" material="mat_floating" euler= "0 -90 0"/>
+                    <geom name="floating" type="box" size="{0.05*scaler} {0.05*scaler} {0.05*scaler}" mass="{Pusher.pusher_base_mass}" material="mat_floating" euler= "0 0 0"/>
                 </body>
         
             </worldbody>

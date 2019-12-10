@@ -1,5 +1,5 @@
 import numpy as np
-from math import cos, sin, pi
+from math import cos, sin, pi, radians
 
 
 def pose2matrix(pose):
@@ -54,6 +54,43 @@ def matrix2pose(a_matrix):
     l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WA, l_WB, l_WC])
     return l_pose
 
+# accepts angle in degrees
+# returns rotation matrix
+def get_Rx(theta, units="degrees"):
+    assert units in ["degrees", "radians"]
+    if units is "degree":
+        theta = radians(theta)
+
+    return np.array([[1, 0, 0, 0],
+                    [0, cos(theta), -sin(theta), 0],
+                    [0, sin(theta), cos(theta), 0],
+                    [0, 0, 0, 1]])
+
+
+# accepts angle in degrees
+# returns rotation matrix
+def get_Ry(theta, units="degrees"):
+    assert units in ["degrees", "radians"]
+    if units is "degree":
+        theta = radians(theta)
+
+    return np.array([[cos(theta), 0, sin(theta), 0],
+                    [0, 1, 0, 0],
+                    [-sin(theta), 0, cos(theta), 0],
+                    [0, 0, 0, 1]])
+
+
+# accepts angle in degrees
+# returns rotation matrix
+def get_Rz(theta, units="degrees"):
+    assert units in ["degrees", "radians"]
+    if units is "degree":
+        theta = radians(theta)
+
+    return np.array([[cos(theta), -sin(theta), 0, 0],
+                    [sin(theta), cos(theta), 0, 0],
+                    [0, 0, 1, 0],
+                    [0, 0, 0, 1]])
 
 def getRotationMatrix_90_x():
     return np.array([[1, 0, 0, 0],
