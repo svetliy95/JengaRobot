@@ -8,11 +8,14 @@ def generate_texture_with_tag(block_num, side, path):
     tag_size = 300
     width = 300
     height = 500
+    rotation = None
 
     if side == 'left':
         tag_id = 2 * block_num
+        rotation = -90
     else:
         tag_id = 2 * block_num + 1
+        rotation = 90
 
     tag_name = "tag36_11_" + str(tag_id).zfill(5) + ".png"
     tag_img = Image.open('../../resources/tag36h11/' + tag_name)
@@ -20,7 +23,7 @@ def generate_texture_with_tag(block_num, side, path):
     tag_w, tag_h = tag_img.size
 
     # rotate tag
-    tag_img = tag_img.rotate(90)
+    tag_img = tag_img.rotate(rotation)
 
     # create empty image with the white background
     res = Image.new('RGB', (width, height), (255, 255, 255))
