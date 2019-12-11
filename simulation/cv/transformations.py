@@ -58,7 +58,7 @@ def matrix2pose(a_matrix):
 # returns rotation matrix
 def get_Rx(theta, units="degrees"):
     assert units in ["degrees", "radians"]
-    if units is "degree":
+    if units is "degrees":
         theta = radians(theta)
 
     return np.array([[1, 0, 0, 0],
@@ -71,7 +71,7 @@ def get_Rx(theta, units="degrees"):
 # returns rotation matrix
 def get_Ry(theta, units="degrees"):
     assert units in ["degrees", "radians"]
-    if units is "degree":
+    if units is "degrees":
         theta = radians(theta)
 
     return np.array([[cos(theta), 0, sin(theta), 0],
@@ -84,7 +84,7 @@ def get_Ry(theta, units="degrees"):
 # returns rotation matrix
 def get_Rz(theta, units="degrees"):
     assert units in ["degrees", "radians"]
-    if units is "degree":
+    if units is "degrees":
         theta = radians(theta)
 
     return np.array([[cos(theta), -sin(theta), 0, 0],
@@ -94,8 +94,8 @@ def get_Rz(theta, units="degrees"):
 
 def getRotationMatrix_90_x():
     return np.array([[1, 0, 0, 0],
-                     [0, -1, 0, 0],
                      [0, 0, -1, 0],
+                     [0, 1, 0, 0],
                      [0, 0, 0, 1]])
 
 
