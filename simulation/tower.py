@@ -20,7 +20,7 @@ class Tower:
         return self.sim.data.get_body_xpos(self.block_prefix + str(num))
 
     def get_orientation(self, num):
-        assert num < self.block_num
+        assert num < self.block_num, "Block num is to high"
         return self.sim.data.get_body_xquat(self.block_prefix + str(num))
 
     def get_highest_block_num(self):

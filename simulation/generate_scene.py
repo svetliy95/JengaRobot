@@ -173,13 +173,15 @@ def generate_scene(num_blocks=54,
                 
                 
                 <!-- floating body with tag -->
-                <body name="floating_body" pos="-1 -5 3">
+                <body name="floating_body" pos="-7 0 3" mocap="true">
+                <!--
                     <joint name="x_floating_slide" type="slide" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="y_floating_slide" type="slide" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="z_floating_slide" type="slide" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="x_floating_hinge" type="hinge" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="y_floating_hinge" type="hinge" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
                     <joint name="z_floating_hinge" type="hinge" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
+                -->
                     <geom name="floating" type="box" size="{0.05*scaler} {0.05*scaler} {0.05*scaler}" mass="{Pusher.pusher_base_mass}" material="mat_floating" euler= "0 0 0"/>
                 </body>
         
@@ -193,12 +195,14 @@ def generate_scene(num_blocks=54,
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_pusher_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_hinge"/>
                 
+                <!--
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_slide"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_floating_slide"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_floating_slide"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_floating_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_floating_hinge"/>
+                -->
             </actuator>
             
             <sensor>

@@ -44,19 +44,19 @@ def matrix2pose(a_matrix):
         l_WC = np.arctan2(l_sa * a_matrix[0, 2] - l_ca * a_matrix[1, 2], -l_sa * a_matrix[0, 1] + l_ca * a_matrix[1, 1])
     else:
         l_WA = 0
-        l_WB = np.arctan2(-a_matrix[2, 0], l_norm) / pi * 180
+        l_WB = np.arctan2(-a_matrix[2, 0], l_norm)
 
         if l_WB > 0:
-            l_WC = np.arctan2(a_matrix[0, 1], a_matrix[1, 1]) / pi * 180
+            l_WC = np.arctan2(a_matrix[0, 1], a_matrix[1, 1])
         else:
-            l_WC = -np.arctan2(a_matrix[0, 1], a_matrix[1, 1]) / pi * 180
+            l_WC = -np.arctan2(a_matrix[0, 1], a_matrix[1, 1])
 
     l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WA, l_WB, l_WC])
     return l_pose
 
 # accepts angle in degrees
-# returns rotation matrix
-def get_Rx(theta, units="degrees"):
+# returns homogeneous rotation matrix
+def get_Rx_h(theta, units="degrees"):
     assert units in ["degrees", "radians"]
     if units is "degrees":
         theta = radians(theta)
@@ -68,8 +68,8 @@ def get_Rx(theta, units="degrees"):
 
 
 # accepts angle in degrees
-# returns rotation matrix
-def get_Ry(theta, units="degrees"):
+# returns homogeneous rotation matrix
+def get_Ry_h(theta, units="degrees"):
     assert units in ["degrees", "radians"]
     if units is "degrees":
         theta = radians(theta)
@@ -81,8 +81,8 @@ def get_Ry(theta, units="degrees"):
 
 
 # accepts angle in degrees
-# returns rotation matrix
-def get_Rz(theta, units="degrees"):
+# returns homogeneous rotation matrix
+def get_Rz_h(theta, units="degrees"):
     assert units in ["degrees", "radians"]
     if units is "degrees":
         theta = radians(theta)
@@ -91,6 +91,43 @@ def get_Rz(theta, units="degrees"):
                     [sin(theta), cos(theta), 0, 0],
                     [0, 0, 1, 0],
                     [0, 0, 0, 1]])
+
+
+# accepts angle in degrees
+# returns rotation matrix
+def get_Rx(theta, units="degrees"):
+    assert units in ["degrees", "radians"]
+    if units is "degrees":
+        theta = radians(theta)
+
+    return np.array([[1, 0, 0],
+                    [0, cos(theta), -sin(theta)],
+                    [0, sin(theta), cos(theta)]])
+
+
+# accepts angle in degrees
+# returns rotation matrix
+def get_Ry(theta, units="degrees"):
+    assert units in ["degrees", "radians"]
+    if units is "degrees":
+        theta = radians(theta)
+
+    return np.array([[cos(theta), 0, sin(theta)],
+                    [0, 1, 0],
+                    [-sin(theta), 0, cos(theta)]])
+
+
+# accepts angle in degrees
+# returns rotation matrix
+def get_Rz(theta, units="degrees"):
+    assert units in ["degrees", "radians"]
+    if units is "degrees":
+        theta = radians(theta)
+
+    return np.array([[cos(theta), -sin(theta), 0],
+                    [sin(theta), cos(theta), 0],
+                    [0, 0, 1]])
+
 
 def getRotationMatrix_90_x():
     return np.array([[1, 0, 0, 0],

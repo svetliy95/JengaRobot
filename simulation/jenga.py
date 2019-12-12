@@ -18,6 +18,8 @@ from pusher import Pusher
 from tower import Tower
 from math import sin, cos, radians
 from cv2 import imwrite
+from cv.transformations import matrix2pose
+import math
 
 
 # globals
@@ -26,9 +28,9 @@ g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
 
 # floating body
-fb_x = -3
-fb_y = -5
-fb_z = 2
+fb_x = -7
+fb_y = 0
+fb_z = 3
 fb_yaw = 0
 fb_pitch = 0
 fb_roll = 0
@@ -186,10 +188,6 @@ while True:
     sim.step()
     stop = time.time()
 
-    # print the real-time scaler
-    # if(t % 10 == 0):
-    #     print(g_timestep/(stop - start))
-
     viewer.render()
     if screenshot_fl:
         data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
@@ -197,24 +195,34 @@ while True:
         imwrite('./screenshots/screenshot.png', data)
         screenshot_fl = False
 
-
-    # print(tower.get_angle_to_ground(53))
-    # print(np.array_str(get_camera_pose()/one_millimeter, precision=3, suppress_small=True))
-
-
+    # update_force_sensor_plot()
     if t == 100:
         # start block checking
         checking_thread = Thread(target=check_all_blocks)
         # checking_thread.start()
 
-    sim.data.ctrl[-1] = fb_yaw
-    sim.data.ctrl[-2] = fb_roll
-    sim.data.ctrl[-3] = fb_pitch
-    sim.data.ctrl[-4] = fb_z
-    sim.data.ctrl[-5] = fb_y
-    sim.data.ctrl[-6] = fb_x
+    q = Quaternion([1, 0, 0, 0])
+    q = Quaternion(axis=[0.4, 1, -0.6], angle=(math.pi/2)*2.5)
+    # q = Quaternion([-0.697, -0.001, 0.717, -0.006])
+    # q = Quaternion([-0.704, 0.711, 0.002, 0.009])
+    q = Quaternion([-0.704, 0.71, 0.002, 0.009])
+    # print(q.elements)
+    ypr = q.yaw_pitch_roll
+    # sim.data.ctrl[-1] = ypr[0]
+    # sim.data.ctrl[-2] = ypr[1]
+    # sim.data.ctrl[-3] = ypr[2]
+    #
+    #
+    # sim.data.ctrl[-4] = fb_z
+    # sim.data.ctrl[-5] = fb_y
+    # sim.data.ctrl[-6] = fb_x
+    sim.data.set_mocap_pos("floating_body", [fb_x, fb_y, fb_z])
+    sim.data.set_mocap_quat("floating_body", q.elements)
 
-    print(np.array_str((sim.data.body_xpos[-1] + np.array([-0.03*scaler*0.8, -0.03*scaler*0.8, +0.03*scaler]))/one_millimeter, precision=3, suppress_small=True))
+    print(np.array_str(tower.get_orientation(3), precision=3, suppress_small=True))
+
+    # print(np.array_str((sim.data.body_xpos[-1] + np.array([-0.03*scaler*0.8, -0.03*scaler*0.8, +0.03*scaler]))/one_millimeter, precision=3, suppress_small=True))
+    # print(np.array_str(sim.data.body_xquat[-1], precision=3, suppress_small=True))
 
 
     # calculate mean penetration
@@ -224,6 +232,8 @@ while True:
     #         penetrations.append(x.dist)
     #
     # print(np.mean(penetrations))
+
+
 
 
 
