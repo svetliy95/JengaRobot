@@ -2,8 +2,6 @@ from mujoco_py import load_model_from_xml, MjSim, MjViewer, MjRenderContextOffsc
 from pynput import keyboard
 import os
 from generate_scene import generate_scene
-import time
-from scipy.spatial.transform import Rotation as R
 import numpy as np
 from pyquaternion import Quaternion
 import time
@@ -17,8 +15,9 @@ from constants import *
 from pusher import Pusher
 from tower import Tower
 from math import sin, cos, radians
-from cv2 import imwrite
 from cv.transformations import matrix2pose
+from cv2 import imwrite
+
 import math
 
 
@@ -159,17 +158,17 @@ def take_screenshot():
 # initialize simulation
 model = load_model_from_xml(generate_scene(g_blocks_num, g_timestep))
 sim = MjSim(model)
-viewer = MjViewer(sim)
+# viewer = MjViewer(sim)
+viewer = MjRenderContextOffscreen(sim)
 pusher = Pusher(sim)
 tower = Tower(sim)
 
 # start with specific camera position
-viewer.cam.elevation = -7
-viewer.cam.azimuth = 180
-viewer._run_speed = 1
-viewer.cam.lookat[2] = -1
-viewer.cam.distance = 15
-viewer._run_speed = 1
+# viewer.cam.elevation = -7
+# viewer.cam.azimuth = 180
+# viewer._run_speed = 1
+# viewer.cam.lookat[2] = -1
+# viewer.cam.distance = 15
 t = 0
 
 # start keyboard listener
@@ -188,12 +187,19 @@ while True:
     sim.step()
     stop = time.time()
 
-    viewer.render()
+    # viewer.render()
     if screenshot_fl:
-        data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
-        data[:, :,  [0, 2]] = data[:, :, [2, 0]]
-        imwrite('./screenshots/screenshot.png', data)
-        screenshot_fl = False
+        # data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
+        # data[:, :,  [0, 2]] = data[:, :, [2, 0]]
+        # imwrite('./screenshots/screenshot.png', data)
+        # screenshot_fl = False
+
+        viewer.render(1920-66, 1080-55, 0)
+        data = np.asarray(viewer.read_pixels(1920-66, 1080-55, depth=False)[::-1, :, :], dtype=np.uint8)
+
+        # save data
+        if data is not None:
+            imwrite("screenshots/offscreen.png", data)
 
     # update_force_sensor_plot()
     if t == 100:
@@ -201,6 +207,8 @@ while True:
         checking_thread = Thread(target=check_all_blocks)
         # checking_thread.start()
 
+
+    # debug outputs
     q = Quaternion([1, 0, 0, 0])
     q = Quaternion(axis=[0.4, 1, -0.6], angle=(math.pi/2)*2.5)
     # q = Quaternion([-0.697, -0.001, 0.717, -0.006])
@@ -208,19 +216,13 @@ while True:
     q = Quaternion([-0.704, 0.71, 0.002, 0.009])
     # print(q.elements)
     ypr = q.yaw_pitch_roll
-    # sim.data.ctrl[-1] = ypr[0]
-    # sim.data.ctrl[-2] = ypr[1]
-    # sim.data.ctrl[-3] = ypr[2]
-    #
-    #
-    # sim.data.ctrl[-4] = fb_z
-    # sim.data.ctrl[-5] = fb_y
-    # sim.data.ctrl[-6] = fb_x
     sim.data.set_mocap_pos("floating_body", [fb_x, fb_y, fb_z])
     sim.data.set_mocap_quat("floating_body", q.elements)
 
     print(np.array_str(tower.get_orientation(3), precision=3, suppress_small=True))
+    print(np.array_str(tower.get_position(3)/one_millimeter, precision=3, suppress_small=True))
 
+    # print mocap body position
     # print(np.array_str((sim.data.body_xpos[-1] + np.array([-0.03*scaler*0.8, -0.03*scaler*0.8, +0.03*scaler]))/one_millimeter, precision=3, suppress_small=True))
     # print(np.array_str(sim.data.body_xquat[-1], precision=3, suppress_small=True))
 

@@ -3,6 +3,8 @@ from constants import *
 from pyquaternion import Quaternion
 from numpy.random import normal
 from scipy.stats import truncnorm
+# from cv.block_localization import get_block_positions, get_camera_params
+
 
 class Tower:
     pos = np.array([0, 0, 0])
@@ -17,11 +19,17 @@ class Tower:
         pass
 
     def get_position(self, num):
+        assert num < self.block_num, "Block num is to high"
         return self.sim.data.get_body_xpos(self.block_prefix + str(num))
 
     def get_orientation(self, num):
         assert num < self.block_num, "Block num is to high"
         return self.sim.data.get_body_xquat(self.block_prefix + str(num))
+
+    def get_position_cv(self, num):
+        assert num < self.block_num, "Block num is to high"
+        raise NotImplementedError("Function is not implemented!")
+        pass
 
     def get_highest_block_num(self):
         max_z = 0
@@ -48,7 +56,6 @@ class Tower:
     def get_angle_of_highest_block_to_ground(self):
         num = self.get_highest_block_num()
         return self.get_angle_to_ground(num)
-
 
     def get_displacement(self, num):
         starting_pos = self.starting_positions[num]
