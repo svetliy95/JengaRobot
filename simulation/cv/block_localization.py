@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import apriltag
 import math
-from transformations import matrix2pose, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
+from .transformations import matrix2pose, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
 from pyquaternion import Quaternion
 scaler = 50
 one_millimeter = 0.001 * scaler
@@ -20,13 +20,13 @@ class bcolors:
 def angle_between_vectors(a, b):
     return math.acos(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
-def get_camera_params(im_height, fovy):
-    f = 0.5 * im_height / math.tan(fovy * math.pi / 360)
+def get_camera_params(height, width, fovy):
+    f = 0.5 * height / math.tan(fovy * math.pi / 360)
     fx = f
     fy = f
     sx = width / 2
     sy = height / 2
-    return [fx, fy, sx, sy]
+    return np.array([fx, fy, sx, sy])
 
 
 def get_camera_pose_matrix(image, tag_id, tag_size, tag_pos, camera_params):
@@ -34,7 +34,7 @@ def get_camera_pose_matrix(image, tag_id, tag_size, tag_pos, camera_params):
     assert camera_params.size == 4, "camera_params must be a 4d vector ([fx, fy, sx, sy])"
 
     detector = apriltag.Detector()
-    detections = detector.detect(image, False)
+    detections = detector.detect(image)
 
     tag_matrix = None
 
@@ -67,12 +67,14 @@ def get_camera_pose_matrix(image, tag_id, tag_size, tag_pos, camera_params):
 
         camera_matrix = pose2matrix(camera_pose)
 
+        # return image if flag is set
+
         return camera_matrix
     else:
         return None
 
 
-def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, ref_tag_size, ref_tag_pos, camera_params):
+def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, ref_tag_size, ref_tag_pos, camera_params, return_image):
     assert ref_tag_pos.size == 3, "tag_pos_ref must be a 3d vector"
 
     # get camera pose as a transformation matrix
@@ -80,7 +82,7 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
 
     # initialize and start detector
     detector = apriltag.Detector()
-    detections, image = detector.detect(img, True)
+    detections, dimage = detector.detect(img, True)
 
     # detect block's tag
     block_matrices = dict()
@@ -122,9 +124,12 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
         block_matrix[:3, :3] = R
         block_matrices[tag_id] = block_matrix
 
-    return block_matrices
+    if return_image:
+        return block_matrices, dimage
+    else:
+        return block_matrices
 
-def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, camera_params):
+def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, camera_params, return_images):
     assert block_sizes.size == 3, "block_sizes must be a 3d vector"
 
     # calculate tag ids corresponding to block ids
@@ -133,23 +138,25 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
         target_tag_ids.append(i * 2)
         target_tag_ids.append(i * 2 + 1)
 
-    tag_pose_matrices_im1 = get_tag_poses_from_image(img=im1,
-                                                   target_tag_ids=target_tag_ids,
-                                                   target_tag_size=target_tag_size,
-                                                   ref_tag_id=ref_tag_id,
-                                                   ref_tag_size=ref_tag_size,
-                                                   ref_tag_pos=ref_tag_pos,
-                                                   camera_params=camera_params)
+    tag_pose_matrices_im1, dimage1 = get_tag_poses_from_image(img=im1,
+                                                                target_tag_ids=target_tag_ids,
+                                                                target_tag_size=target_tag_size,
+                                                                ref_tag_id=ref_tag_id,
+                                                                ref_tag_size=ref_tag_size,
+                                                                ref_tag_pos=ref_tag_pos,
+                                                                camera_params=camera_params,
+                                                              return_image=return_images)
 
-    tag_pose_matrices_im2 = get_tag_poses_from_image(img=im2,
+    tag_pose_matrices_im2, dimage2 = get_tag_poses_from_image(img=im2,
                                                      target_tag_ids=target_tag_ids,
                                                      target_tag_size=target_tag_size,
                                                      ref_tag_id=ref_tag_id,
                                                      ref_tag_size=ref_tag_size,
                                                      ref_tag_pos=ref_tag_pos,
-                                                     camera_params=camera_params)
+                                                     camera_params=camera_params,
+                                                              return_image=return_images)
     
-    positions = dict()
+    positions = {}
     
     
     for block_id in block_ids:
@@ -178,28 +185,39 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
             vec = right_tag_pose[:3] - left_tag_pose[:3]
             rotation_axis = np.cross(vec, np.array([1, 0, 0]))
             block_quat = Quaternion(axis=rotation_axis, angle=angle_between_vectors(vec, np.array([1, 0, 0])))
-            positions[block_id] = np.concatenate((block_center, block_quat.elements))
+            positions[block_id] = {'pos': block_center,
+                                   'orientation': block_quat.elements,
+                                   'tags_detected': np.array([2])}
         
         elif left_tag_matrix is not None:
-            print(bcolors.WARNING + f"Block #{block_id}: only one tag detected!" + bcolors.ENDC)
+            # print(bcolors.WARNING + f"Block #{block_id}: only one tag detected!" + bcolors.ENDC)
             left_tag_pose = matrix2pose(left_tag_matrix)
             tag_quat = Quaternion(matrix=left_tag_matrix)
             tag_normal = tag_quat.rotate(np.array([1, 0, 0]))
             block_center = left_tag_pose[:3] + (tag_normal * block_sizes[0] * 0.5)
-            positions[block_id] = np.concatenate((block_center, tag_quat.elements))
+            positions[block_id] = {'pos': block_center,
+                                   'orientation': tag_quat.elements,
+                                   'tags_detected': np.array([1])}
         
         elif right_tag_matrix is not None:
-            print(bcolors.WARNING + f"Block #{block_id}: only one tag detected!" + bcolors.ENDC)
+            # print(bcolors.WARNING + f"Block #{block_id}: only one tag detected!" + bcolors.ENDC)
             right_tag_pose = matrix2pose(right_tag_matrix)
             tag_quat = Quaternion(matrix=right_tag_matrix)
             tag_normal = tag_quat.rotate(np.array([1, 0, 0]))
             block_center = right_tag_pose[:3] - (tag_normal * block_sizes[0] * 0.5)
-            positions[block_id] = np.concatenate((block_center, tag_quat.elements))
+            positions[block_id] = {'pos': block_center,
+                                   'orientation': tag_quat.elements,
+                                   'tags_detected': np.array([1])}
 
         else:
-            print(bcolors.WARNING + f"Block #{block_id}: no tags detected!" + bcolors.ENDC)
+            # print(bcolors.FAIL + f"Block #{block_id}: no tags detected!" + bcolors.ENDC)
+            pass
 
-    return positions
+    # the last element of each dictionary entry shows how much tags were used for position estimation
+    if return_images:
+        return positions, dimage1, dimage2
+    else:
+        return positions
 
 
 if __name__ == "__main__":
@@ -210,7 +228,7 @@ if __name__ == "__main__":
     im2 = cv2.imread('/home/bch_svt/cartpole/simulation/screenshots/im2.png', cv2.IMREAD_GRAYSCALE)
 
     height, width = im1.shape
-    camera_params = np.array(get_camera_params(height, 45))
+    camera_params = np.array(get_camera_params(height, width, 45))
 
     pose = get_block_positions(im1=im1,
                                im2=im2,

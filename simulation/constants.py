@@ -1,3 +1,5 @@
+import numpy as np
+
 # simulation
 g_timestep = 0.003
 
@@ -12,6 +14,11 @@ coordinate_axes_pos_y = -0.15 * scaler
 coordinate_axes_pos_z = 0
 coordinate_axes_width = 0.005 * scaler
 coordinate_axes_height = 0.025 * scaler
+
+# coordinate frame tag
+coordinate_frame_tag_size = np.array([0.06*scaler, 0.06*scaler, 0.02])
+coordinate_frame_tag_pos = np.array([-0.1*scaler, -0.1*scaler, 0])
+coordinate_frame_tag_id = 255
 
 # empirical data
 block_length_mean = 0.0750283018867925 * scaler
@@ -34,7 +41,6 @@ block_mass_sigma = 0.001406754796448 * scaler**3
 block_mass_min = 0.015876 * scaler**3
 block_mass_max = 0.022995 * scaler**3
 
-
 # vectors
 x_unit_vector = [1, 0, 0]
 y_unit_vector = [0, 1, 0]
@@ -42,7 +48,8 @@ z_unit_vector = [0, 0, 1]
 
 # sensing
 timesteps_transient = 75
-# force_threshold = 200000
 displacement_threshold = 0.3
 pusher_spring_length = 0.1 * scaler
 
+# camera parameters
+fovy = 45

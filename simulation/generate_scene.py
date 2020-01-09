@@ -133,8 +133,9 @@ def generate_scene(num_blocks=54,
             </asset>
         
             <worldbody>
-                <!-- camera -->
-                <camera name="main1" mode="targetbody" target="block53" pos="1.3 -1.3 2.0" fovy="42.5"/>
+                <!-- cameras -->
+                <camera name="cam1" mode="fixed" pos="13.619144207633779 -12.881811375734092 10.253618753368848" xyaxes="13.697094885436288 13.303969412909323 -0.0 -50.36766872056147 51.85600749760638 364.60601044027175" fovy="45"/>
+                <camera name="cam2" mode="fixed" pos="-12.771330489383502 13.023560783310552 10.379449117055714" xyaxes="-12.211118677158598 -13.083650787812111 0.0 47.17238071883744 -44.02651435625462 320.293337285068" fovy="45"/>
                 
                 <!-- lighting -->
                 <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
@@ -143,15 +144,11 @@ def generate_scene(num_blocks=54,
                 <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
                 
                 <!-- coordinate system tag -->
-                <geom name="coordinate_frame_tag" type="box" size="{0.03*scaler} {0.03*scaler} 0.01" pos="{-0.1*scaler} {-0.1*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame" euler="0 0 90"/>
-                <!-- 
-                <geom name="coordinate_frame_tag2" type="box" size="{0.03*scaler} {0.03*scaler} 0.002" pos="{-0.04*scaler} {-0.1*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame2" euler="0 0 90"/>
-                <geom name="coordinate_frame_tag3" type="box" size="{0.03*scaler} {0.03*scaler} 0.002" pos="{-0.1*scaler} {-0.04*scaler} 0" rgba="1 1 1 1" material="mat_coord_frame3" euler="0 0 90"/>
-                -->                    
+                <geom name="coordinate_frame_tag" type="box" size="{coordinate_frame_tag_size[0]/2} {coordinate_frame_tag_size[1]/2} {coordinate_frame_tag_size[2]/2}" pos="{coordinate_frame_tag_pos[0]} {coordinate_frame_tag_pos[1]} {coordinate_frame_tag_pos[2]}" rgba="1 1 1 1" material="mat_coord_frame" euler="0 0 90"/>                   
                 
                 <!-- coordinate axes -->
                 {generate_coordinate_axes()}
-                
+                `
                 <!-- pusher -->
                 <body name="pusher_base" pos="{Pusher.START_X} {Pusher.START_Y} {Pusher.START_Z}">
                     <joint name="x_pusher_slide" type="slide" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
@@ -173,17 +170,13 @@ def generate_scene(num_blocks=54,
                 
                 
                 <!-- floating body with tag -->
-                <body name="floating_body" pos="-7 0 3" mocap="true">
                 <!--
-                    <joint name="x_floating_slide" type="slide" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                    <joint name="y_floating_slide" type="slide" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                    <joint name="z_floating_slide" type="slide" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                    <joint name="x_floating_hinge" type="hinge" axis="1 0 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                    <joint name="y_floating_hinge" type="hinge" axis="0 1 0" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                    <joint name="z_floating_hinge" type="hinge" axis="0 0 1" damping="{Pusher.pusher_base_damping}" pos ="0 0 0"/>
-                -->
+                <body name="floating_body" pos="-7 0 3" mocap="true">
+
                     <geom name="floating" type="box" size="{0.05*scaler} {0.05*scaler} {0.05*scaler}" mass="{Pusher.pusher_base_mass}" material="mat_floating" euler= "0 0 0"/>
                 </body>
+                
+                -->
         
             </worldbody>
             

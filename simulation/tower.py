@@ -3,7 +3,10 @@ from constants import *
 from pyquaternion import Quaternion
 from numpy.random import normal
 from scipy.stats import truncnorm
-# from cv.block_localization import get_block_positions, get_camera_params
+from cv.block_localization import get_block_positions, get_camera_params
+import cv2
+import math
+from PIL import Image
 
 
 class Tower:
@@ -14,8 +17,9 @@ class Tower:
     starting_positions = []
     block_sizes = []
 
-    def __init__(self, sim):
+    def __init__(self, sim, viewer):
         self.sim = sim
+        self.viewer = viewer
         pass
 
     def get_position(self, num):
@@ -26,10 +30,67 @@ class Tower:
         assert num < self.block_num, "Block num is to high"
         return self.sim.data.get_body_xquat(self.block_prefix + str(num))
 
+    def _take_picture(self, cam_id):
+        # self.viewer.render(1920 - 66, 1080 - 55, cam_id)
+        w = 4096
+        h = 2160
+        self.viewer.render(w, h, cam_id)
+        data = np.asarray(self.viewer.read_pixels(w, h, depth=False)[::-1, :, :], dtype=np.uint8)
+        data[:, :, [0, 2]] = data[:, :, [2, 0]]
+        return data
+
+    @staticmethod
+    def _get_angle_between_quaternions(q1, q2):
+        q1 = Quaternion(q1).unit
+        q2 = Quaternion(q2).unit
+        return Quaternion.sym_distance(q1, q2)
+        # return 2 * math.acos(q1 * q2.conjugate)
+
+    def get_pose_cv(self, ids, return_images=True):
+        assert set(ids).issubset(set(range(g_blocks_num))), "Wrong block ids!"
+        im1 = self._take_picture(0)
+        im2 = self._take_picture(1)
+        im1_gray = cv2.cvtColor(im1, cv2.COLOR_RGB2GRAY)
+        im2_gray = cv2.cvtColor(im2, cv2.COLOR_RGB2GRAY)
+        height, width = im1_gray.shape
+
+        poses, dimage1, dimage2 = get_block_positions(im1=im1_gray,
+                                        im2=im2_gray,
+                                        block_ids=ids,
+                                        target_tag_size=block_height_mean * 0.8,  # 0.8 because the actual tag length is 8/10 of the whole length
+                                        ref_tag_size=coordinate_frame_tag_size[0] * 0.8,  # 0.8 because the actual tag length is 8/10 of the whole length
+                                        ref_tag_pos=coordinate_frame_tag_pos,
+                                        ref_tag_id=coordinate_frame_tag_id,
+                                        block_sizes=np.array([block_length_mean, block_width_mean, block_height_mean]),
+                                        camera_params=get_camera_params(height, width, fovy),
+                                        return_images=return_images)
+
+        # calculate errors
+        for i in poses:
+            poses[i]['pos_error'] = np.linalg.norm(poses[i]['pos'] - self.get_position(i))
+            poses[i]['orientation_error'] = math.degrees(Tower._get_angle_between_quaternions(poses[i]['orientation'], self.get_orientation(i)))
+
+        # mark detected tags on images
+        white_areas = (dimage1 == 255)
+        im1[..., ][white_areas] = (100, 255, 100)
+        white_areas = (dimage2 == 255)
+        im2[..., ][white_areas] = (100, 255, 100)
+
+        if return_images:
+            return poses, im1, im2
+        else:
+            return poses
+
     def get_position_cv(self, num):
         assert num < self.block_num, "Block num is to high"
-        raise NotImplementedError("Function is not implemented!")
-        pass
+
+        position = self.get_pose_cv([num])
+
+        if len(position) > 0:
+            return self.get_pose_cv([num])[0]
+        else:
+            return None
+
 
     def get_highest_block_num(self):
         max_z = 0
