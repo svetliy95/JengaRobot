@@ -182,9 +182,14 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
             block_center = left_tag_pose[:3] + (right_tag_pose[:3] - left_tag_pose[:3])/2
 
             # calculate quaternion
-            vec = right_tag_pose[:3] - left_tag_pose[:3]
-            rotation_axis = np.cross(vec, np.array([1, 0, 0]))
-            block_quat = Quaternion(axis=rotation_axis, angle=angle_between_vectors(vec, np.array([1, 0, 0])))
+            # 1st approach
+            # vec = right_tag_pose[:3] - left_tag_pose[:3]
+            # rotation_axis = np.cross(np.array([1, 0, 0]), vec)
+            # block_quat = Quaternion(axis=rotation_axis, angle=angle_between_vectors(vec, np.array([1, 0, 0])))
+            # 2nd approach
+            left_tag_quat = Quaternion(matrix=left_tag_matrix)
+            right_tag_quat = Quaternion(matrix=right_tag_matrix)
+            block_quat = Quaternion(np.mean([left_tag_quat, right_tag_quat]))
             positions[block_id] = {'pos': block_center,
                                    'orientation': block_quat.elements,
                                    'tags_detected': np.array([2])}

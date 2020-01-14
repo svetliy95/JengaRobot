@@ -69,13 +69,10 @@ class Pusher():
         self.y = pos[1]
         self.z = pos[2]
 
-    def ser_orientation(self, q):
+    def set_orientation(self, q):
         self.q = q
 
     def move_pusher_to_block(self, block_num):
-        x_unit_vector = np.array([1, 0, 0])
-        y_unit_vector = np.array([0, 1, 0])
-        z_unit_vector = np.array([0, 0, 1])
         gap = 5 * one_millimeter
 
         # get orientation of the target block as a quaternion
@@ -202,8 +199,6 @@ class Pusher():
         current_sensor_value = -self.sim.data.sensordata[g_blocks_num * 3 + g_blocks_num * 4]
 
         displacement = np.linalg.norm(block_pos_after - block_pos_before) / one_millimeter
-
-        print("Current value %.2f: \nDisplacement: %.2f" % (current_sensor_value, displacement))
 
         return current_sensor_value, displacement
 

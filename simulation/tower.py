@@ -20,7 +20,6 @@ class Tower:
     def __init__(self, sim, viewer):
         self.sim = sim
         self.viewer = viewer
-        pass
 
     def get_position(self, num):
         assert num < self.block_num, "Block num is to high"
@@ -31,7 +30,6 @@ class Tower:
         return self.sim.data.get_body_xquat(self.block_prefix + str(num))
 
     def _take_picture(self, cam_id):
-        # self.viewer.render(1920 - 66, 1080 - 55, cam_id)
         w = 4096
         h = 2160
         self.viewer.render(w, h, cam_id)
@@ -41,12 +39,11 @@ class Tower:
 
     @staticmethod
     def _get_angle_between_quaternions(q1, q2):
-        q1 = Quaternion(q1).unit
-        q2 = Quaternion(q2).unit
+        q1 = Quaternion(q1)
+        q2 = Quaternion(q2)
         return Quaternion.sym_distance(q1, q2)
-        # return 2 * math.acos(q1 * q2.conjugate)
 
-    def get_pose_cv(self, ids, return_images=True):
+    def get_poses_cv(self, ids, return_images=True):
         assert set(ids).issubset(set(range(g_blocks_num))), "Wrong block ids!"
         im1 = self._take_picture(0)
         im2 = self._take_picture(1)
@@ -84,10 +81,10 @@ class Tower:
     def get_position_cv(self, num):
         assert num < self.block_num, "Block num is to high"
 
-        position = self.get_pose_cv([num])
+        position = self.get_poses_cv([num])
 
         if len(position) > 0:
-            return self.get_pose_cv([num])[0]
+            return self.get_poses_cv([num])[0]
         else:
             return None
 

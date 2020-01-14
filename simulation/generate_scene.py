@@ -3,6 +3,7 @@ from math import sqrt
 from constants import *
 from pusher import Pusher
 from tower import Tower
+from extractor import Extractor
 
 
 def generate_textures_and_materials_assets():
@@ -172,21 +173,42 @@ def generate_scene(num_blocks=54,
                 <!-- floating body with tag -->
                 <!--
                 <body name="floating_body" pos="-7 0 3" mocap="true">
-
                     <geom name="floating" type="box" size="{0.05*scaler} {0.05*scaler} {0.05*scaler}" mass="{Pusher.pusher_base_mass}" material="mat_floating" euler= "0 0 0"/>
                 </body>
                 
                 -->
+                
+                <!-- extractor -->
+                {Extractor.generate_xml()}
+                
+                <!--
+                <body name="block_test" pos="{Extractor.STARTING_POS[0]} {Extractor.STARTING_POS[1]} {Extractor.STARTING_POS[2]}" euler="0 0 0" mocap="true">
+                        <geom mass="{block_mass_mean}" pos="0 0 0" class="block" size="{block_length_mean/2} {block_width_mean/2} {block_height_mean/2}" type="box" rgba="1 0 0 1"/>
+                </body>
+                -->                 
         
             </worldbody>
             
             <actuator>
+                <!-- pusher actuators -->
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_pusher_slide" name="x_pusher_actuator"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_pusher_slide" name="y_pusher_actuator"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_slide" name="z_pusher_actuator"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_pusher_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="y_pusher_hinge"/>
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_hinge"/>
+                
+                <!-- extractor actuators -->
+                <position name="extractor_slide_x_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_slide_x"/>
+                <position name="extractor_slide_y_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_slide_y"/>
+                <position name="extractor_slide_z_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_slide_z"/>
+                <position name="extractor_hinge_x_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_hinge_x"/>
+                <position name="extractor_hinge_y_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_hinge_y"/>
+                <position name="extractor_hinge_z_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_hinge_z"/>
+                <position name="finger1_actuator" kp="{Extractor.finger_kp}" gear="1 0 0 0 0 0" joint="finger1_joint"/>
+                <position name="finger2_actuator" kp="{Extractor.finger_kp}" gear="1 0 0 0 0 0" joint="finger2_joint"/>
+                
+                
                 
                 <!--
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_slide"/>

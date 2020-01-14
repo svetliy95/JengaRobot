@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from constants import *
 from pusher import Pusher
 from tower import Tower
+from extractor import Extractor
 from math import sin, cos, radians
 from cv.transformations import matrix2pose
 import cv2
@@ -33,6 +34,45 @@ fb_z = 3
 fb_yaw = 0
 fb_pitch = 0
 fb_roll = 0
+
+def off_screen_render_and_plot_errors():
+    positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
+
+    # get actual and estimated positions
+    actual_positions = []
+    estimated_positions = []
+    used_tags = []
+    for i in range(g_blocks_num):
+        actual_positions.append(tower.get_position(i))
+    actual_positions = np.array(actual_positions)
+
+    # extract estimated positions
+    h, w, _ = im1.shape
+    new_h = int(1080 / 2.2)
+    new_w = int(1920 / 2.2)
+    im1 = cv2.resize(im1, (new_w, new_h))
+    im2 = cv2.resize(im2, (new_w, new_h))
+    black_line = np.zeros((new_h, 10, 3), np.uint8)
+    im = np.concatenate((im1, black_line, im2), axis=1)
+    cv2.imshow(mat=im, winname="Render")
+    start = time.time()
+    cv2.waitKey(1)
+    stop = time.time()
+    # print(f"Wait_time: {stop - start} s.")
+    for i in range(g_blocks_num):
+        est_pose = positions.get(i)
+        if est_pose is not None:
+            pos_error = est_pose['orientation_error']
+            line1[i].set_height(pos_error)
+            if est_pose['tags_detected'] == 2:
+                line1[i].set_color('b')
+            else:
+                line1[i].set_color('y')
+        else:
+            line1[i].set_height(10)
+            line1[i].set_color('r')
+    fig_errors.canvas.draw()
+    fig_errors.canvas.flush_events()
 
 
 def print_fixed_camera_xml(cam_pos, cam_lookat):
@@ -107,31 +147,32 @@ def on_press(key):
             Thread(target=pusher.move_pusher_to_block, args=(9,)).start()
         if key.char == '+':
             # pusher.move_pusher_in_direction('up')
-            fb_z += 0.1
+            extractor.open()
         if key.char == '-':
             # pusher.move_pusher_in_direction('down')
-            fb_z -= 0.1
+            extractor.close()
         if key.char == '.':
             pusher.move_pusher_to_next_block()
         if key.char == ',':
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
-            pusher.push()
+            # pusher.push()
+            extractor.set_finger_distance(0.001*scaler)
         if key.char == 'q':
             take_screenshot()
     except AttributeError:
         if key == keyboard.Key.up:
             # pusher.move_pusher_in_direction('forward')
-            fb_x -= 0.1
+            extractor.move_in_direction('forward')
         if key == keyboard.Key.down:
             # pusher.move_pusher_in_direction('backwards')
-            fb_x += 0.1
+            extractor.move_in_direction('backwards')
         if key == keyboard.Key.left:
             # pusher.move_pusher_in_direction('left')
-            fb_y -= 0.1
+            extractor.move_in_direction('left')
         if key == keyboard.Key.right:
             # pusher.move_pusher_in_direction('right')
-            fb_y += 0.1
+            extractor.move_in_direction('right')
     print(key)
 
 
@@ -165,9 +206,16 @@ def take_screenshot():
     global screenshot_fl
     screenshot_fl = True
 
+def delete_this_function():
+    positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
+
+    print(positions)
+    print(im1)
+    print(im2)
+
 
 # initialize simulation
-on_screen_rendering = False
+on_screen_rendering = True
 plot_force = False
 automatize_pusher = True
 model = load_model_from_xml(generate_scene(g_blocks_num, g_timestep))
@@ -177,8 +225,9 @@ if on_screen_rendering:
 else:
     viewer = MjRenderContextOffscreen(sim)
 
-pusher = Pusher(sim)
 tower = Tower(sim, viewer)
+pusher = Pusher(sim)
+extractor = Extractor(sim, tower)
 
 # start keyboard listener
 start_keyboard_listener()
@@ -199,13 +248,13 @@ if plot_force:
     plotting_thread = Thread(target=plot_force_data)
     plotting_thread.start()
 
-# create histogram plot
+# create histogram plot for position errors
 x_errors = np.arange(g_blocks_num)
 y_errors = np.zeros(g_blocks_num)
 plt.ion()
 fig_errors = plt.figure()
 ax = fig_errors.add_subplot(111)
-ax.set(ylim=(0, 370))
+ax.set(ylim=(0, 15))
 ax.xaxis.set_ticks(range(g_blocks_num))
 ax.yaxis.set_ticks(range(10))
 line1 = ax.bar(x_errors, y_errors)
@@ -223,56 +272,15 @@ while True:
     sim.step()
     stop = time.time()
 
-    print(f"Step time: {stop-start}")
+    # print(f"Step time: {stop-start}")
+
+    # set extractor
+    extractor.update_positions()
 
     # get positions of blocks and plot images
-    if t % 100 == 0:
+    if t % 100 == 0 and not on_screen_rendering:
+        off_screen_render_and_plot_errors()
 
-        positions, im1, im2 = tower.get_pose_cv(range(g_blocks_num))
-
-        # get actual and estimated positions
-        actual_positions = []
-        estimated_positions = []
-        used_tags = []
-        for i in range(g_blocks_num):
-            actual_positions.append(tower.get_position(i))
-        actual_positions = np.array(actual_positions)
-
-        # extract estimated positions
-        h, w, _ = im1.shape
-        new_h = int(1080 / 2.2)
-        new_w = int(1920 / 2.2)
-        im1 = cv2.resize(im1, (new_w, new_h))
-        im2 = cv2.resize(im2, (new_w, new_h))
-        print(im1.shape)
-        black_line = np.zeros((new_h, 10, 3), np.uint8)
-        print(black_line.shape)
-        im = np.concatenate((im1, black_line, im2), axis=1)
-        cv2.imshow(mat=im, winname="Render")
-        start = time.time()
-        cv2.waitKey(1)
-        stop = time.time()
-        print(f"Wait_time: {stop - start} s.")
-        for i in range(g_blocks_num):
-            est_pose = positions.get(i)
-            if est_pose is not None:
-                pos_error = est_pose['orientation_error'] / one_millimeter
-                line1[i].set_height(pos_error)
-                if est_pose['tags_detected'] == 2:
-                    line1[i].set_color('b')
-                else:
-                    line1[i].set_color('y')
-            else:
-                line1[i].set_height(10)
-                line1[i].set_color('r')
-
-        for i in range(g_blocks_num):
-            print(f"CV: #{i}: {positions[i]['orientation']}")
-            print(f"Ac: #{i}: {tower.get_orientation(i)}")
-
-
-        fig_errors.canvas.draw()
-        fig_errors.canvas.flush_events()
 
     if on_screen_rendering:
         viewer.render()
@@ -343,6 +351,6 @@ while True:
 
 
     cycle_time_stop = time.time()
-    print(f"Cycle time: {cycle_time_stop - cycle_time_start} s.")
+    # print(f"Cycle time: {cycle_time_stop - cycle_time_start} s.")
     if t > 100 and os.getenv('TESTING') is not None:
         break
