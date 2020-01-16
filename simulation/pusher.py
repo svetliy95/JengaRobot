@@ -59,11 +59,6 @@ class Pusher():
         self.sim.data.ctrl[4] = yaw_pitch_roll[1]
         self.sim.data.ctrl[5] = yaw_pitch_roll[0]
 
-    def set_position(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
-
     def set_position(self, pos):
         self.x = pos[0]
         self.y = pos[1]

@@ -42,9 +42,9 @@ block_mass_min = 0.015876 * scaler**3
 block_mass_max = 0.022995 * scaler**3
 
 # vectors
-x_unit_vector = [1, 0, 0]
-y_unit_vector = [0, 1, 0]
-z_unit_vector = [0, 0, 1]
+x_unit_vector = np.array([1, 0, 0])
+y_unit_vector = np.array([0, 1, 0])
+z_unit_vector = np.array([0, 0, 1])
 
 # sensing
 timesteps_transient = 75

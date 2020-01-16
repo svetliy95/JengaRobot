@@ -26,14 +26,7 @@ import math
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
-
-# floating body
-fb_x = -7
-fb_y = 0
-fb_z = 3
-fb_yaw = 0
-fb_pitch = 0
-fb_roll = 0
+move_extractor_fl = False
 
 def off_screen_render_and_plot_errors():
     positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
@@ -132,7 +125,7 @@ def start_keyboard_listener():
 
 
 def on_press(key):
-    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll
+    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll, move_extractor_fl
 
     try:
         if key.char == '5':
@@ -157,7 +150,7 @@ def on_press(key):
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
             # pusher.push()
-            extractor.set_finger_distance(0.001*scaler)
+            move_extractor_fl = True
         if key.char == 'q':
             take_screenshot()
     except AttributeError:
@@ -200,6 +193,15 @@ def check_all_blocks():
         pusher.move_pusher_to_next_block()
         time.sleep(1)
     print(loose_blocks)
+
+def move_extractor():
+    global move_extractor_fl
+    while True:
+        if move_extractor_fl:
+            move_extractor_fl = False
+            extractor.move_to_block(1)
+        time.sleep(1)
+
 
 
 def take_screenshot():
@@ -275,7 +277,7 @@ while True:
     # print(f"Step time: {stop-start}")
 
     # set extractor
-    extractor.update_positions()
+    extractor.update_positions(t)
 
     # get positions of blocks and plot images
     if t % 100 == 0 and not on_screen_rendering:
@@ -317,6 +319,8 @@ while True:
         if automatize_pusher:
             checking_thread = Thread(target=check_all_blocks)
             checking_thread.start()
+            extractor_thread = Thread(target=move_extractor)
+            extractor_thread.start()
 
     # print_fixed_camera_xml(get_camera_pose()[:3], viewer.cam.lookat)
 

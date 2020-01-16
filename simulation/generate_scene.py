@@ -182,7 +182,7 @@ def generate_scene(num_blocks=54,
                 {Extractor.generate_xml()}
                 
                 <!--
-                <body name="block_test" pos="{Extractor.STARTING_POS[0]} {Extractor.STARTING_POS[1]} {Extractor.STARTING_POS[2]}" euler="0 0 0" mocap="true">
+                <body name="block_test" pos="{Extractor.HOME_POS[0]} {Extractor.HOME_POS[1]} {Extractor.HOME_POS[2]}" euler="0 0 0" mocap="true">
                         <geom mass="{block_mass_mean}" pos="0 0 0" class="block" size="{block_length_mean/2} {block_width_mean/2} {block_height_mean/2}" type="box" rgba="1 0 0 1"/>
                 </body>
                 -->                 
