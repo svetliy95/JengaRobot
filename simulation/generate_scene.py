@@ -108,6 +108,10 @@ def generate_scene(num_blocks=54,
                     <geom rgba="0.8235 0.651 0.4745 1" condim="6" friction="0.4 0.005 0.0001"/>
                 </default>
             </default>
+            
+            <!--
+            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.9 0.95 0.001 0.5 2" o_solref="0 5" noslip_iterations="0"/> 
+            -->
             <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5" noslip_iterations="0"/>
         
             <visual>

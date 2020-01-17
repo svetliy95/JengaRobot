@@ -6,6 +6,8 @@ from scipy.stats import truncnorm
 from cv.block_localization import get_block_positions, get_camera_params
 import cv2
 import math
+from utils.utils import *
+import time
 from PIL import Image
 
 
@@ -88,15 +90,109 @@ class Tower:
         else:
             return None
 
-
-    def get_highest_block_num(self):
+    def get_highest_block_id(self):
         max_z = 0
         max_block_num = -1
         for i in range(self.block_num):
-            if self.get_position(i)[2] > max_z:
+            height = self.get_position(i)[2]
+            if height > max_z:
+                max_z = height
                 max_block_num = i
 
         return max_block_num
+
+    def get_blocks_from_highest_level(self):
+        highest_block = self.get_highest_block_id()
+        highest_block_pos = self.get_position(highest_block)
+
+    def get_positions(self):
+        positions = {}
+        for i in range(self.block_num):
+            positions[i] = self.get_position(i)
+
+        return positions
+
+    def get_adjacent_blocks(self, id, positions):
+        root_pos = self.get_position(id)
+
+        # search for blocks with the same height within a certain threshold
+        adjacent_blocks = []
+        for i in range(g_blocks_num):
+            if abs(positions[i][2] - root_pos[2]) < same_height_threshold:
+                adjacent_blocks.append(i)
+
+        print(f"Adjacent blocks: {adjacent_blocks}")
+
+        return adjacent_blocks
+
+    def get_layers(self, positions):
+        blocks_to_test = [i for i in range(self.block_num)]
+        layers = []
+        for i in range(self.block_num):
+            layer = []
+            if i in blocks_to_test:
+                for j in range(self.block_num):
+                    if j in blocks_to_test:
+                        if abs(positions[i][2] - positions[j][2]) < same_height_threshold:
+                            layer.append(j)
+                layers.append(layer)
+                # blocks_to_test = [x for x in blocks_to_test if x not in layer]
+                blocks_to_test = (set(blocks_to_test) - set(layer))
+
+        return layers
+
+    def get_full_layers(self, positions):
+        layers = self.get_layers(positions)
+
+        full_layers = [layer for layer in layers if len(layer) == 3]
+
+        return full_layers
+
+    def get_center_xy(self, positions):
+        full_layers = self.get_full_layers(positions)
+        x = []
+        y = []
+        for layer in full_layers:
+            for id in layer:
+                x.append(positions[id][0])
+                y.append(positions[id][1])
+        return np.array([np.mean(x), np.mean(y)])
+
+    def get_highest_layer(self, positions):
+        return self.get_adjacent_blocks(self.get_highest_block_id(), positions)
+
+    def get_placing_pose(self, positions):
+        # there are 3 cases:
+        # 1. 3 blocks in the highest layer
+        # 2. 2 blocks in the highest layer
+        # 3. 1 block in the highest layer
+
+        highest_layer = self.get_highest_layer(positions)
+        # calculate highest layer mean height
+        z = []
+        for i in range(len(highest_layer)):
+            z.append(self.get_position(highest_layer[i])[2])
+        highest_layer_height = np.mean(z)
+
+        # case 1: place the block on the side near the origin perpendicular to the last 3 blocks
+        if len(highest_layer) == 3:
+            # calculate the mean orientation of the last 3 blocks
+            orientations = []
+            for block_id in highest_layer:
+                orientations.append(self.get_orientation(block_id))
+            mean_orientation = Quaternion(np.mean(orientations))
+            block_orientation = mean_orientation  # * Quaternion(axis=[0, 0, 1], degrees=90)
+
+            # calculate pos
+            tower_center = self.get_center_xy(positions)
+            tower_center_with_height = np.concatenate((tower_center, np.array([highest_layer_height + block_height_max*1.1])))
+            temp_vector = mean_orientation.rotate(x_unit_vector)
+            origin_projected_on_line = point_projection_on_line(tower_center_with_height, tower_center_with_height + 100 * temp_vector, origin)
+            # off set from the center of the tower
+            offset_direction = origin_projected_on_line - tower_center_with_height
+            placing_pos = tower_center_with_height + block_width_max * offset_direction
+
+        return np.concatenate((placing_pos, block_orientation.elements))
 
     def get_angle_to_ground(self, num):
         q = Quaternion(self.get_orientation(num))
@@ -112,7 +208,7 @@ class Tower:
         return np.mean(angles)
 
     def get_angle_of_highest_block_to_ground(self):
-        num = self.get_highest_block_num()
+        num = self.get_highest_block_id()
         return self.get_angle_to_ground(num)
 
     def get_displacement(self, num):
@@ -127,7 +223,7 @@ class Tower:
         return np.mean(displacements)
 
     def get_displacement_of_highest_block(self):
-        num = self.get_highest_block_num()
+        num = self.get_highest_block_id()
         return self.get_displacement(num)
 
     @staticmethod

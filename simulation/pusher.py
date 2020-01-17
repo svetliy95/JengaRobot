@@ -3,6 +3,7 @@ import numpy as np
 from math import sqrt
 import time
 from constants import *
+from utils.utils import *
 from threading import Thread
 
 class Pusher():
@@ -119,13 +120,6 @@ class Pusher():
             self.current_block -= 1
             self.move_pusher_to_block(self.current_block)
 
-    @staticmethod
-    def _point_projection_on_line(line_point1, line_point2, point):
-        ap = point - line_point1
-        ab = line_point2 - line_point1
-        result = line_point1 + np.dot(ap, ab) / np.dot(ab, ab) * ab
-        return result
-
     def translate(self, v_translation):
         assert isinstance(v_translation, np.ndarray), "Translation vector must be of type np.ndarray"
         assert v_translation.size == 3, 'Incorrect translation vector dimensionality.'
@@ -166,7 +160,7 @@ class Pusher():
             unit_vector = z_unit_vector
 
         translation_direction = self.q.rotate(unit_vector)
-        projection = self._point_projection_on_line(np.array([self.x, self.y, self.z]),
+        projection = point_projection_on_line(np.array([self.x, self.y, self.z]),
                                                   np.array([self.x, self.y, self.z]) + translation_direction,
                                                   np.array([point[0], point[1], point[2]]))
         self.set_position(projection)

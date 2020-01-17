@@ -53,3 +53,7 @@ pusher_spring_length = 0.1 * scaler
 
 # camera parameters
 fovy = 45
+
+# tower parameters
+same_height_threshold = block_height_mean/3
+origin = np.array([0, 0, 0])

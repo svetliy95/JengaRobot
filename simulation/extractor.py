@@ -26,6 +26,9 @@ class Extractor:
     distance_between_fingers_open = block_width_mean * 1.6
 
     translation_to_move_slowly = np.zeros(3)
+    rotation_to_rotate_slowly = np.zeros(4)
+
+    counter = 0
 
 
 
@@ -64,16 +67,14 @@ class Extractor:
                 self.translate(self.translation_to_move_slowly)
                 self.translation_to_move_slowly = np.zeros(3)
 
+        # calculate offset
+        offset = (2 * Extractor.finger_length + Extractor.size) * self.q.rotate(-x_unit_vector)
+
         # update position
-        self.sim.data.ctrl[6] = self.x - self.HOME_POS[0]
-        self.sim.data.ctrl[7] = self.y - self.HOME_POS[1]
-        self.sim.data.ctrl[8] = self.z - self.HOME_POS[2]
-
-        # self.sim.data.ctrl[6] = self.x
-        # self.sim.data.ctrl[7] = self.y
-        # self.sim.data.ctrl[8] = self.z
-
-        # updata orientation
+        self.sim.data.ctrl[6] = self.x - self.HOME_POS[0] - offset[0]
+        self.sim.data.ctrl[7] = self.y - self.HOME_POS[1] - offset[1]
+        self.sim.data.ctrl[8] = self.z - self.HOME_POS[2] - offset[2]
+        # update orientation
         yaw_pitch_roll = self.q.yaw_pitch_roll
         self.sim.data.ctrl[9] = yaw_pitch_roll[2]
         self.sim.data.ctrl[10] = yaw_pitch_roll[1]
@@ -116,7 +117,6 @@ class Extractor:
     def close(self):
         self.set_finger_distance(self.distance_between_fingers_close)
 
-
     # Returns quarter in which the extractor is located
     # The quarters are defined around the origin as follows:
     #
@@ -130,7 +130,6 @@ class Extractor:
         assert pos.size == 3, "Argument 'pos' is not a 3d array!"
         x = pos[0]
         y = pos[1]
-        z = pos[2]
         if y >= abs(x):
             return 1
         if y <= -abs(x):
@@ -187,14 +186,32 @@ class Extractor:
             stopovers = self._get_stopovers(1, 2, height) + self._get_stopovers(2, 3, height)
         if start_quarter == 3 and end_quarter == 1:
             stopovers = self._get_stopovers(3, 4, height) + self._get_stopovers(4, 1, height)
+        if start_quarter == 1 and end_quarter == 1:
+            stopover = y_unit_vector * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 2 and end_quarter == 2:
+            stopover = -x_unit_vector * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 3 and end_quarter == 3:
+            stopover = -y_unit_vector * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 4 and end_quarter == 4:
+            stopover = x_unit_vector * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
 
         return stopovers
 
     def go_home(self):
+        start_quarter = self._get_quarter(self.get_position())
+        end_quarter = self._get_quarter(self.HOME_POS)
+        stopovers = self._get_stopovers(start_quarter, end_quarter, self.z)
+        for stopover in stopovers:
+            self.set_position(stopover)
+            self._sleep_simtime(0.2)
         self.set_position(self.HOME_POS)
 
-    def put_on_top(self):
-        heighest_block_z = self.tower.get_position(self.tower.get_highest_block_num())[2]
+    def put_on_top(self, placing_pose):
+        heighest_block_z = self.tower.get_position(self.tower.get_highest_block_id())[2]
         height = heighest_block_z + 1
 
         stopover = self.get_position()
@@ -205,7 +222,9 @@ class Extractor:
         while np.any(self.translation_to_move_slowly):
             self._sleep_simtime(0.2)
 
-        target = np.array([0, 0, height])
+        target = placing_pose[:3]
+
+        self.set_orientation(Quaternion(placing_pose[3:]))
 
         self.translation_to_move_slowly = target - self.get_position()
 
@@ -214,17 +233,20 @@ class Extractor:
 
         self.open()
 
-
     def pull(self, block_id):
         block_quat = Quaternion(self.tower.get_orientation(block_id)) * Quaternion(axis=[0, 0, 1], degrees=180)
         block_pos = np.array(self.tower.get_position(block_id))
         block_x_face_normal_vector = np.array(block_quat.rotate(x_unit_vector))
-        target = np.array(block_pos + (block_length_mean + (
-                    Extractor.finger_length * 2 + Extractor.size)) * block_x_face_normal_vector)
-        self.translation_to_move_slowly = target - block_pos
+        target = np.array(block_pos + block_length_mean * block_x_face_normal_vector)
+        self.translate_slowly(target - block_pos)
 
-        while np.any(self.translation_to_move_slowly):
-            self._sleep_simtime(0.2)
+    def move_from_block(self, block_id):
+        block_quat = Quaternion(self.tower.get_orientation(block_id)) * Quaternion(axis=[0, 0, 1], degrees=180)
+        block_pos = np.array(self.tower.get_position(block_id))
+        block_x_face_normal_vector = np.array(block_quat.rotate(x_unit_vector))
+        target = np.array(block_pos + (block_length_mean + (
+                Extractor.finger_length * 2 + Extractor.size)) * block_x_face_normal_vector)
+        self.set_position(target)
 
     def translate(self, v_translation):
         assert isinstance(v_translation, np.ndarray), "Translation vector must be of type np.ndarray"
@@ -233,13 +255,25 @@ class Extractor:
         self.y += v_translation[1]
         self.z += v_translation[2]
 
+    def translate_slowly(self, translation):
+        self.translation_to_move_slowly = translation
+        self.wait_until_translation_done()
+
+    def move_slowly(self, pos):
+        self.translation_to_move_slowly = pos - self.get_position()
+        self.wait_until_translation_done()
+
+    def wait_until_translation_done(self):
+        while np.any(self.translation_to_move_slowly):
+            self._sleep_simtime(0.2)
+
     # The path is calculated according to the quarters in which extractor and the target are located
     def move_to_block(self, num):
         block_quat = Quaternion(self.tower.get_orientation(num)) * Quaternion(axis=[0, 0, 1], degrees=180)
         block_pos = np.array(self.tower.get_position(num))
         block_x_face_normal_vector = np.array(block_quat.rotate(x_unit_vector))
 
-        target = np.array(block_pos + (block_length_mean/2 - block_width_mean + (Extractor.finger_length * 2 + Extractor.size)) * block_x_face_normal_vector)
+        target = np.array(block_pos + (block_length_mean/2 - block_width_mean) * block_x_face_normal_vector)
         intermediate_target = target + (block_length_mean/2) * block_x_face_normal_vector
 
         stopovers = self._get_stopovers(self._get_quarter(self.get_position()),
@@ -262,30 +296,13 @@ class Extractor:
         self._sleep_simtime(0.2)
         self.pull(num)
         self._sleep_simtime(0.3)
-        self.put_on_top()
 
-
-
-
-
-        # # move backwards to avoid collisions
-        # self.move_along_own_axis('x', block_length_mean)
-        # self._sleep_simtime(0.3)
-        #
-        # # move along its own y-axis towards the intermediate target
-        # self.move_along_own_axis_towards_point('y', intermediate_target)
-        # self._sleep_simtime(0.3)
-        #
-        # # rotate
-        # self.set_orientation(block_quat)
-        # self._sleep_simtime(0.3)
-        #
-        # # translate towards the intermediate target
-        # self.set_position(intermediate_target)
-        # self._sleep_simtime(0.3)
-        #
-        # # translate towards the target
-        # self.set_position(pos=target)
+        placing_pose = self.tower.get_placing_pose(self.tower.get_positions())
+        self.put_on_top(placing_pose)
+        self._sleep_simtime(0.7)
+        self.move_from_block(num)
+        self._sleep_simtime(0.2)
+        self.go_home()
 
     @staticmethod
     def _point_projection_on_line(line_point1, line_point2, point):
@@ -335,6 +352,14 @@ class Extractor:
         while self.t * g_timestep < current_time + t:
             time.sleep(0.05)
 
+    def test_orientation(self):
+        orientations = []
+        for i in range(3):
+            orientations.append(self.tower.get_orientation(self.counter + i))
+        orientation = np.mean(orientations)
+        self.set_orientation(Quaternion(orientation))
+        self.counter += 3
+
 
     @staticmethod
     def generate_xml():
@@ -342,9 +367,9 @@ class Extractor:
                             <joint name="extractor_slide_x" type="slide" pos="0 0 0" axis="1 0 0" damping="{Extractor.base_damping}"/>
                             <joint name="extractor_slide_y" type="slide" pos="0 0 0" axis="0 1 0" damping="{Extractor.base_damping}"/>
                             <joint name="extractor_slide_z" type="slide" pos="0 0 0" axis="0 0 1" damping="{Extractor.base_damping}"/>
-                            <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping}" pos ="0 0 0"/>
-                            <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping}" pos ="0 0 0"/>
-                            <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping*2}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping*2}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping*2}" pos ="0 0 0"/>
                             
                             <geom type="box" pos="0 0 0" size="{Extractor.size} {Extractor.width} {Extractor.size}" mass="{Extractor.base_mass}"/>
                             <body name="finger1" pos="{-Extractor.finger_length - Extractor.size} {-Extractor.width + Extractor.size} 0">
@@ -357,20 +382,3 @@ class Extractor:
                             </body>                            
                             <geom type="box" size="0.4 0.4 0.4" mass="0.1" rgba="1 0 0 1" pos="0 0 0"/>
                         </body>'''
-        return f'''<body name="extractor" pos="{Extractor.HOME_POS[0]} {Extractor.HOME_POS[1]} {Extractor.HOME_POS[2]}" euler="0 0 0">
-                    <joint name="extractor_slide_x" type="slide" pos="{Extractor.size + 2*Extractor.finger_length} 0 0" axis="1 0 0" damping="{Extractor.base_damping}"/>
-                    <joint name="extractor_slide_y" type="slide" pos="{Extractor.size + 2*Extractor.finger_length} 0 0" axis="0 1 0" damping="{Extractor.base_damping}"/>
-                    <joint name="extractor_slide_z" type="slide" pos="{Extractor.size + 2*Extractor.finger_length} 0 0" axis="0 0 1" damping="{Extractor.base_damping}"/>
-                    <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping}" pos ="{Extractor.size + 2*Extractor.finger_length} 0 0"/>
-                    <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping}" pos ="{Extractor.size + 2*Extractor.finger_length} 0 0"/>
-                    <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping}" pos ="{Extractor.size + 2*Extractor.finger_length} 0 0"/>
-                    <geom type="box" pos="{Extractor.size + 2*Extractor.finger_length} 0 0" size="{Extractor.size} {Extractor.width} {Extractor.size}" mass="{Extractor.base_mass}"/>
-                    <body name="finger1" pos="{Extractor.finger_length} {-Extractor.width + Extractor.size} 0">
-                        <joint name="finger1_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
-                        <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}"/>
-                    </body>
-                    <body name="finger2" pos="{Extractor.finger_length} {Extractor.width - Extractor.size} 0">
-                        <joint name="finger2_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
-                        <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}"/>
-                    </body>
-                </body>'''

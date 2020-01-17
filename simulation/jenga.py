@@ -150,7 +150,8 @@ def on_press(key):
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
             # pusher.push()
-            move_extractor_fl = True
+            # move_extractor_fl = True
+            extractor.test_orientation()
         if key.char == 'q':
             take_screenshot()
     except AttributeError:
@@ -190,6 +191,13 @@ def check_all_blocks():
                 break
         if fl == 0:
             loose_blocks.append(i)
+            print(f"Highest blocks: {tower.get_blocks_from_highest_level()}")
+            start = time.time()
+            print(tower.get_full_layers(tower.get_positions()))
+            print(tower.get_center_xy(tower.get_positions()))
+            stop = time.time()
+            print(f"Layers time: {(stop - start) * 1000}ms")
+            extractor.move_to_block(i)
         pusher.move_pusher_to_next_block()
         time.sleep(1)
     print(loose_blocks)
@@ -199,7 +207,7 @@ def move_extractor():
     while True:
         if move_extractor_fl:
             move_extractor_fl = False
-            extractor.move_to_block(1)
+            extractor.move_to_block(52)
         time.sleep(1)
 
 
@@ -316,6 +324,7 @@ while True:
         update_force_sensor_plot()
     if t == 100:
         # start block checking
+
         if automatize_pusher:
             checking_thread = Thread(target=check_all_blocks)
             checking_thread.start()
