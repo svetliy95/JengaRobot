@@ -16,13 +16,15 @@ from pusher import Pusher
 from tower import Tower
 from extractor import Extractor
 from math import sin, cos, radians
-from cv.transformations import matrix2pose
 import cv2
 
 import math
 
 
 # globals
+on_screen_rendering = False
+plot_force = False
+automatize_pusher = True
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
@@ -151,7 +153,7 @@ def on_press(key):
         if key.char == 'p':
             # pusher.push()
             # move_extractor_fl = True
-            extractor.test_orientation()
+            Thread(target=extractor.rotate_slowly, args=(extractor.get_orientation() * Quaternion(axis=[0, 0, 1], degrees=90),)).start()
         if key.char == 'q':
             take_screenshot()
     except AttributeError:
@@ -216,18 +218,8 @@ def take_screenshot():
     global screenshot_fl
     screenshot_fl = True
 
-def delete_this_function():
-    positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
-
-    print(positions)
-    print(im1)
-    print(im2)
-
 
 # initialize simulation
-on_screen_rendering = True
-plot_force = False
-automatize_pusher = True
 model = load_model_from_xml(generate_scene(g_blocks_num, g_timestep))
 sim = MjSim(model)
 if on_screen_rendering:

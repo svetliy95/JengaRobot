@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import apriltag
 import math
+from utils import *
 from .transformations import matrix2pose, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
 from pyquaternion import Quaternion
 scaler = 50
@@ -16,9 +17,6 @@ class bcolors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
-
-def angle_between_vectors(a, b):
-    return math.acos(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 def get_camera_params(height, width, fovy):
     f = 0.5 * height / math.tan(fovy * math.pi / 360)

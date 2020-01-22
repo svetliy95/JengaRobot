@@ -9,8 +9,8 @@ scaler = 50
 one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
-coordinate_axes_pos_x = -0.15 * scaler
-coordinate_axes_pos_y = -0.15 * scaler
+coordinate_axes_pos_x = -0.3 * scaler
+coordinate_axes_pos_y = -0.3 * scaler
 coordinate_axes_pos_z = 0
 coordinate_axes_width = 0.005 * scaler
 coordinate_axes_height = 0.025 * scaler

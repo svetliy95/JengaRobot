@@ -1,8 +1,9 @@
 from constants import *
-from math import sqrt
+import math
 from pyquaternion import Quaternion
 from tower import Tower
 import time
+from utils.utils import get_intermediate_rotations
 
 class Extractor:
 
@@ -11,22 +12,25 @@ class Extractor:
     finger_length = 0.020 * scaler
     finger_mass = 0.0125 * scaler ** 3
     finger_kp = finger_mass * 10000
-    finger_damping = 2 * finger_mass * sqrt(finger_kp / finger_mass)  # critical damping
+    finger_damping = 2 * finger_mass * math.sqrt(finger_kp / finger_mass)  # critical damping
     HOME_POS = np.array([-0.3, 0, 2 * size / scaler]) * scaler
 
     base_mass = 0.5 * scaler ** 3
     total_mass = base_mass + 2 * finger_mass
     base_kp = total_mass * 1000
-    base_damping = 2 * total_mass * sqrt(base_kp / total_mass)  # critical damping
+    base_damping = 2 * total_mass * math.sqrt(base_kp / total_mass)  # critical damping
 
     finger1_pos = 0
     finger2_pos = 0
 
-    distance_between_fingers_close = block_width_mean * 0.8
+    distance_between_fingers_close = block_width_mean * 0.7
     distance_between_fingers_open = block_width_mean * 1.6
 
+    grasping_depth = block_width_mean/3*2
+
     translation_to_move_slowly = np.zeros(3)
-    rotation_to_rotate_slowly = np.zeros(4)
+    intermediate_rotations_num = 600
+    intermediate_rotations = []
 
     counter = 0
 
@@ -50,6 +54,9 @@ class Extractor:
     def get_position(self):
         return np.array([self.x, self.y, self.z])
 
+    def get_orientation(self):
+        return self.q
+
     def set_orientation(self, q: Quaternion):
         self.q = q
 
@@ -66,6 +73,14 @@ class Extractor:
             else:
                 self.translate(self.translation_to_move_slowly)
                 self.translation_to_move_slowly = np.zeros(3)
+        else:
+            self.translate(self.translation_to_move_slowly)
+            self.translation_to_move_slowly = np.zeros(3)
+
+        # rotate slowly
+        if self.intermediate_rotations:  # if the list is not empty
+            self.q = self.intermediate_rotations[0]
+            self.intermediate_rotations = self.intermediate_rotations[1:]  # remove first element
 
         # calculate offset
         offset = (2 * Extractor.finger_length + Extractor.size) * self.q.rotate(-x_unit_vector)
@@ -210,27 +225,34 @@ class Extractor:
             self._sleep_simtime(0.2)
         self.set_position(self.HOME_POS)
 
-    def put_on_top(self, placing_pose):
+    def put_on_top(self, placing_pose, num_of_blocks):
         heighest_block_z = self.tower.get_position(self.tower.get_highest_block_id())[2]
-        height = heighest_block_z + 1
+        height = heighest_block_z + block_height_mean*2
 
-        stopover = self.get_position()
-        stopover[2] = height
+        # calculate target
+        pos = placing_pose[:3]
+        orientation = Quaternion(placing_pose[3:])
+        if num_of_blocks == 3:
+            # offset because block's origin is located not on extractor origin
+            target_pos = pos + orientation.rotate(x_unit_vector) * (block_length_mean/2 - self.grasping_depth)
+        else:
+            # additional offset because of the another blocks on the top
+            target_pos = pos + orientation.rotate(x_unit_vector) * (block_length_mean/2 - self.grasping_depth + self.grasping_depth*1.3)
 
-        self.translation_to_move_slowly = stopover - self.get_position()
+        intermediate_target = target_pos + np.array([0, 0, block_height_max*1.5])
 
-        while np.any(self.translation_to_move_slowly):
-            self._sleep_simtime(0.2)
+        # get stopovers
+        stopovers = self._get_stopovers(self._get_quarter(self.get_position()),
+                                        self._get_quarter(intermediate_target),
+                                        height)
 
-        target = placing_pose[:3]
+        for stop in stopovers:
+            self.move_slowly(stop)
 
-        self.set_orientation(Quaternion(placing_pose[3:]))
-
-        self.translation_to_move_slowly = target - self.get_position()
-
-        while np.any(self.translation_to_move_slowly):
-            self._sleep_simtime(0.2)
-
+        self.rotate_slowly(orientation)
+        self.move_slowly(intermediate_target)
+        self.move_slowly(target_pos)
+        self._sleep_simtime(0.2)
         self.open()
 
     def pull(self, block_id):
@@ -263,6 +285,20 @@ class Extractor:
         self.translation_to_move_slowly = pos - self.get_position()
         self.wait_until_translation_done()
 
+    def rotate_slowly(self, q_end):
+        ypr1 = self.get_orientation().yaw_pitch_roll
+        ypr2 = q_end.yaw_pitch_roll
+        difference = math.degrees(abs(ypr1[0] - ypr2[0]))
+        self.intermediate_rotations = get_intermediate_rotations(self.get_orientation(),
+                                                                 q_end,
+                                                                 int(difference*5))
+
+        self.wait_until_rotation_done()
+
+    def wait_until_rotation_done(self):
+        while self.intermediate_rotations:  # while the list is not empty
+            self._sleep_simtime(0.2)
+
     def wait_until_translation_done(self):
         while np.any(self.translation_to_move_slowly):
             self._sleep_simtime(0.2)
@@ -273,7 +309,7 @@ class Extractor:
         block_pos = np.array(self.tower.get_position(num))
         block_x_face_normal_vector = np.array(block_quat.rotate(x_unit_vector))
 
-        target = np.array(block_pos + (block_length_mean/2 - block_width_mean) * block_x_face_normal_vector)
+        target = np.array(block_pos + (block_length_mean/2 - self.grasping_depth) * block_x_face_normal_vector)
         intermediate_target = target + (block_length_mean/2) * block_x_face_normal_vector
 
         stopovers = self._get_stopovers(self._get_quarter(self.get_position()),
@@ -285,7 +321,7 @@ class Extractor:
             self._sleep_simtime(0.2)
 
         self.set_orientation(block_quat)
-        self._sleep_simtime(0.2)
+        self._sleep_simtime(0.3)
         self.set_position(intermediate_target)
         self._sleep_simtime(0.2)
 
@@ -297,8 +333,8 @@ class Extractor:
         self.pull(num)
         self._sleep_simtime(0.3)
 
-        placing_pose = self.tower.get_placing_pose(self.tower.get_positions())
-        self.put_on_top(placing_pose)
+        placing_pose, num_of_blocks = self.tower.get_placing_pose(self.tower.get_positions())
+        self.put_on_top(placing_pose, num_of_blocks)
         self._sleep_simtime(0.7)
         self.move_from_block(num)
         self._sleep_simtime(0.2)
@@ -367,18 +403,18 @@ class Extractor:
                             <joint name="extractor_slide_x" type="slide" pos="0 0 0" axis="1 0 0" damping="{Extractor.base_damping}"/>
                             <joint name="extractor_slide_y" type="slide" pos="0 0 0" axis="0 1 0" damping="{Extractor.base_damping}"/>
                             <joint name="extractor_slide_z" type="slide" pos="0 0 0" axis="0 0 1" damping="{Extractor.base_damping}"/>
-                            <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping*2}" pos ="0 0 0"/>
-                            <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping*2}" pos ="0 0 0"/>
-                            <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping*2}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping}" pos ="0 0 0"/>
                             
                             <geom type="box" pos="0 0 0" size="{Extractor.size} {Extractor.width} {Extractor.size}" mass="{Extractor.base_mass}"/>
                             <body name="finger1" pos="{-Extractor.finger_length - Extractor.size} {-Extractor.width + Extractor.size} 0">
                                 <joint name="finger1_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
-                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}"/>
+                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="50 50 50"/>
                             </body>
                             <body name="finger2" pos="{-Extractor.finger_length - Extractor.size} {Extractor.width - Extractor.size} 0">
                                 <joint name="finger2_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
-                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}"/>
+                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="50 50 50"/>
                             </body>                            
                             <geom type="box" size="0.4 0.4 0.4" mass="0.1" rgba="1 0 0 1" pos="0 0 0"/>
                         </body>'''
