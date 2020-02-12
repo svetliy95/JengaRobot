@@ -22,7 +22,7 @@ import math
 
 
 # globals
-on_screen_rendering = False
+on_screen_rendering = True
 plot_force = False
 automatize_pusher = True
 g_sensor_data_queue = []
@@ -155,7 +155,7 @@ def on_press(key):
             # move_extractor_fl = True
             Thread(target=extractor.rotate_slowly, args=(extractor.get_orientation() * Quaternion(axis=[0, 0, 1], degrees=90),)).start()
         if key.char == 'q':
-            take_screenshot()
+            set_screenshot_flag()
     except AttributeError:
         if key == keyboard.Key.up:
             # pusher.move_pusher_in_direction('forward')
@@ -212,9 +212,32 @@ def move_extractor():
             extractor.move_to_block(52)
         time.sleep(1)
 
-
-
 def take_screenshot():
+    if on_screen_rendering:
+        data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
+        data[:, :, [0, 2]] = data[:, :, [2, 0]]
+        cv2.imwrite('./screenshots/screenshot.png', data)
+    else:
+        # render camera #1
+        viewer.render(1920 - 66, 1080 - 55, 0)
+        data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
+        data[:, :, [0, 2]] = data[:, :, [2, 0]]
+
+        # save data
+        if data is not None:
+            cv2.imwrite("screenshots/offscreen1.png", data)
+
+        # render camera #2
+        viewer.render(1920 - 66, 1080 - 55, 1)
+        data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
+        data[:, :, [0, 2]] = data[:, :, [2, 0]]
+
+        # save data
+        if data is not None:
+            cv2.imwrite("screenshots/offscreen2.png", data)
+
+
+def set_screenshot_flag():
     global screenshot_fl
     screenshot_fl = True
 
@@ -262,22 +285,24 @@ ax.yaxis.set_ticks(range(10))
 line1 = ax.bar(x_errors, y_errors)
 ax.grid(zorder=0)
 
+
+# displacement plot
+displacement_fig = plt.figure(2)
+displacement_data = []
+
+def update_line(data):
+    plt.plot(data)
+    displacement_fig.canvas.draw()
+
 # simulation loop
 t = 0
+start_time = time.time()
 while True:
     t += 1
 
-    cycle_time_start = time.time()
-
     pusher.update_position(t)
-    start = time.time()
-    sim.step()
-    stop = time.time()
-
-    # print(f"Step time: {stop-start}")
-
-    # set extractor
     extractor.update_positions(t)
+    sim.step()
 
     # get positions of blocks and plot images
     if t % 100 == 0 and not on_screen_rendering:
@@ -289,39 +314,32 @@ while True:
 
     if screenshot_fl:
         screenshot_fl = False
-        if on_screen_rendering:
-            data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
-            data[:, :,  [0, 2]] = data[:, :, [2, 0]]
-            cv2.imwrite('./screenshots/screenshot.png', data)
-        else:
-            # render camera #1
-            viewer.render(1920-66, 1080-55, 0)
-            data = np.asarray(viewer.read_pixels(1920-66, 1080-55, depth=False)[::-1, :, :], dtype=np.uint8)
-            data[:, :, [0, 2]] = data[:, :, [2, 0]]
-
-            # save data
-            if data is not None:
-                cv2.imwrite("screenshots/offscreen1.png", data)
-
-            # render camera #2
-            viewer.render(1920 - 66, 1080 - 55, 1)
-            data = np.asarray(viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
-            data[:, :, [0, 2]] = data[:, :, [2, 0]]
-
-            # save data
-            if data is not None:
-                cv2.imwrite("screenshots/offscreen2.png", data)
+        take_screenshot()
 
     if plot_force:
         update_force_sensor_plot()
+
     if t == 100:
         # start block checking
-
         if automatize_pusher:
             checking_thread = Thread(target=check_all_blocks)
             checking_thread.start()
             extractor_thread = Thread(target=move_extractor)
             extractor_thread.start()
+
+    sim_time = g_timestep * t
+    if sim_time % 1 < g_timestep and False:  # every second
+        if sim_time >= 20 and sim_time < 81:
+            average_displacement = tower.get_average_displacement()/one_millimeter
+            displacement_data.append(average_displacement)
+            print("{:.5f}".format(average_displacement))
+            update_line(np.array(displacement_data[1:]) - np.array(displacement_data[:-1]))
+
+        if sim_time >= 80 and sim_time < 80 + g_timestep:
+            finish_time = time.time()
+            print(f"Real-time factor: {sim_time/(finish_time - start_time)}")
+
+
 
     # print_fixed_camera_xml(get_camera_pose()[:3], viewer.cam.lookat)
 
