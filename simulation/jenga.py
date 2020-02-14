@@ -17,18 +17,37 @@ from tower import Tower
 from extractor import Extractor
 from math import sin, cos, radians
 import cv2
-
 import math
+import logging
+import colorlog
+from simple_pid import PID
+
+
+# specify logger
+# DEBUG: Detailed information, typically of interest only when diagnosing problems.
+# INFO: Confirmation that things are working as expected.
+# WARNING: An indication that something unexpected happened, or indicative of some problem in
+# the near future (e.g. ‘disk space low’). The software is still working as expected.
+# ERROR: Due to a more serious problem, the software has not been able to perform some function.
+# CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
+
+log = logging.Logger(__name__)
+# formatter = colorlog.ColoredFormatter('%(log_color)s%(asctime)s:%(levelname)s:%(funcName)s:%(message)s')
+formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.DEBUG)
+log.addHandler(stream_handler)
 
 
 # globals
 on_screen_rendering = True
 plot_force = False
-automatize_pusher = True
+automatize_pusher = 1
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
-move_extractor_fl = False
+cart_pos = 0
 
 def off_screen_render_and_plot_errors():
     positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
@@ -127,7 +146,7 @@ def start_keyboard_listener():
 
 
 def on_press(key):
-    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll, move_extractor_fl
+    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll, move_extractor_fl, cart_pos
 
     try:
         if key.char == '5':
@@ -142,10 +161,12 @@ def on_press(key):
             Thread(target=pusher.move_pusher_to_block, args=(9,)).start()
         if key.char == '+':
             # pusher.move_pusher_in_direction('up')
-            extractor.open()
+            # extractor.open_narrow()
+            cart_pos += 10
         if key.char == '-':
             # pusher.move_pusher_in_direction('down')
-            extractor.close()
+            # extractor.close_narrow()
+            cart_pos -= 10
         if key.char == '.':
             pusher.move_pusher_to_next_block()
         if key.char == ',':
@@ -153,7 +174,7 @@ def on_press(key):
         if key.char == 'p':
             # pusher.push()
             # move_extractor_fl = True
-            Thread(target=extractor.rotate_slowly, args=(extractor.get_orientation() * Quaternion(axis=[0, 0, 1], degrees=90),)).start()
+            Thread(target=extractor.take_from_zwischenablage).start()
         if key.char == 'q':
             set_screenshot_flag()
     except AttributeError:
@@ -169,7 +190,6 @@ def on_press(key):
         if key == keyboard.Key.right:
             # pusher.move_pusher_in_direction('right')
             extractor.move_in_direction('right')
-    print(key)
 
 
 def check_all_blocks():
@@ -199,18 +219,11 @@ def check_all_blocks():
             print(tower.get_center_xy(tower.get_positions()))
             stop = time.time()
             print(f"Layers time: {(stop - start) * 1000}ms")
-            extractor.move_to_block(i)
+            extractor.extract_and_put_on_top(i)
         pusher.move_pusher_to_next_block()
         time.sleep(1)
     print(loose_blocks)
 
-def move_extractor():
-    global move_extractor_fl
-    while True:
-        if move_extractor_fl:
-            move_extractor_fl = False
-            extractor.move_to_block(52)
-        time.sleep(1)
 
 def take_screenshot():
     if on_screen_rendering:
@@ -263,7 +276,7 @@ if on_screen_rendering:
     viewer.cam.azimuth = 180
     viewer._run_speed = 1
     viewer.cam.lookat[2] = -1
-    viewer.cam.distance = 15
+    viewer.cam.distance = 25
 
 
 
@@ -297,12 +310,31 @@ def update_line(data):
 # simulation loop
 t = 0
 start_time = time.time()
+previous_pos = 0
+pid_y = PID(1, 0, 0)
+pid_z = PID(1, 0.1, 0.01)
 while True:
     t += 1
 
     pusher.update_position(t)
     extractor.update_positions(t)
     sim.step()
+
+    # control cart
+    current_velocity = (sim.data.get_body_xpos('cart')[1] - previous_pos)/g_timestep
+    log.debug(f"Current vel: {current_velocity}")
+    previous_pos = sim.data.get_body_xpos('cart')[1]
+    sim.data.ctrl[-1] = pid_z(sim.data.get_body_xpos('cart')[2])  # vel z
+    sim.data.ctrl[-2] = pid_y(sim.data.get_body_xpos('cart')[1] - cart_pos) # vel y
+    # sim.data.ctrl[-3] = 0  # vel z
+    # vel = 0
+    # if abs(cart_pos - sim.data.get_body_xpos('cart')[1]) > 0.005:
+    #     vel = 0.000000001 * math.copysign(1, cart_pos - sim.data.get_body_xpos('cart')[1])
+    # else:
+    #     vel = 0
+    # control_v = pid(vel - current_velocity)
+    # log.debug(f"Y_vel: {control_v}")
+    # sim.data.ctrl[-4] = control_v  # vel y
 
     # get positions of blocks and plot images
     if t % 100 == 0 and not on_screen_rendering:
@@ -324,8 +356,6 @@ while True:
         if automatize_pusher:
             checking_thread = Thread(target=check_all_blocks)
             checking_thread.start()
-            extractor_thread = Thread(target=move_extractor)
-            extractor_thread.start()
 
     sim_time = g_timestep * t
     if sim_time % 1 < g_timestep and False:  # every second

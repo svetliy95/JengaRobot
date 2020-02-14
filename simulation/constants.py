@@ -1,10 +1,11 @@
 import numpy as np
+from pyquaternion import Quaternion
 
 # simulation
 g_timestep = 0.003
 
 # tower
-g_blocks_num = 54
+g_blocks_num = 0
 scaler = 50
 one_millimeter = 0.001 * scaler
 
@@ -57,3 +58,11 @@ fovy = 45
 # tower parameters
 same_height_threshold = block_height_mean/3
 origin = np.array([0, 0, 0])
+
+# zwischenablage
+zwischanablage_pos = np.array([-0.5, 0, 0.1]) * scaler
+zwischenablage_quat = Quaternion(axis=z_unit_vector, degrees=45) * Quaternion(axis=y_unit_vector, degrees=45) * Quaternion(axis=x_unit_vector, degrees=45)
+zwischenablage_quat_elem = zwischenablage_quat.q
+zwischanablage_base_size = np.array([block_width_mean / scaler, block_length_mean/2 / scaler, 0.001]) * scaler
+zwischanablage_bottom_wall_size = np.array([0.001, block_length_mean/2 / scaler, block_height_mean*0.8/scaler]) * scaler
+zwischanablage_side_wall_size = np.array([block_width_mean / scaler, 0.001, block_height_mean*0.2/scaler]) * scaler

@@ -18,8 +18,8 @@ class Tower:
     sim = None
     starting_positions = []
     block_sizes = []
-    placing_gap = block_height_max/3
-    placing_spacing = block_width_max * 0.1
+    placing_vert_spacing = block_height_max / 3
+    placing_horiz_spacing = block_width_max * 0.1
 
     def __init__(self, sim, viewer):
         self.sim = sim
@@ -206,11 +206,11 @@ class Tower:
         # And three possible positions for blocks
         # Position 1: offset in the direction of the origin
         # Position 2: central position
-        # Position 3: offset in thd direction away from the origin
+        # Position 3: offset in the direction away from the origin
 
 
 
-        # calculate highest layer mean height
+        # calculate highest full layer mean height
         highest_full_layer = self.get_highest_full_layer(positions)
         z = []
         for i in range(3):
@@ -257,9 +257,8 @@ class Tower:
 
         # case 1: place the block on the side near the origin perpendicular to the last 3 blocks
         if len(highest_layer) == 3:
-            # calculate the mean orientation of the last 3 blocks
-
-            block_orientation = mean_orientation * Quaternion(axis=[0, 0, 1], degrees=90)  # block orientation must be perpendicular to the top blocks
+            # block orientation must be perpendicular to the top blocks
+            block_orientation = mean_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
 
             # calculate pos
             temp_vector = mean_orientation.rotate(x_unit_vector)
@@ -269,7 +268,8 @@ class Tower:
                                                                                           coordinate_axes_pos_y,
                                                                                           coordinate_axes_pos_z]))
 
-            placing_pos = tower_center_with_height + block_width_max * offset_direction + np.array([0, 0, block_height_max/2 + Tower.placing_gap])
+            placing_pos = tower_center_with_height + block_width_max * offset_direction + np.array([0, 0, block_height_max / 2 + Tower.placing_vert_spacing])
+            placing_pos_with_tolerance = tower_center_with_height + (block_width_max + Tower.placing_horiz_spacing) * offset_direction + np.array([0, 0, block_height_max / 2 + Tower.placing_vert_spacing])
 
         # case 2: we consider only the cases where the two blocks are lying near each other
         # the case where the blocks are lying on the sides of the tower is not considered
@@ -287,9 +287,27 @@ class Tower:
                                                                                           coordinate_axes_pos_y,
                                                                                           coordinate_axes_pos_z]))
 
-                placing_pos = central_block_position - (block_width_max + Tower.placing_spacing) * offset_direction
+                placing_pos_with_tolerance = central_block_position - (block_width_max + Tower.placing_horiz_spacing) * offset_direction
 
                 block_orientation = central_block_orientation
+
+            if 1 in occupied_positions and 2 in occupied_positions:
+                central_block_position = positions[occupied_positions[1]]
+                central_block_orientation = Quaternion(self.get_orientation(occupied_positions[1]))
+                offset_orientation = central_block_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+                offset_vector = offset_orientation.rotate(x_unit_vector)
+                offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                             p=central_block_position,
+                                                                             origin=np.array([coordinate_axes_pos_x,
+                                                                                              coordinate_axes_pos_y,
+                                                                                              coordinate_axes_pos_z]))
+                placing_pos = central_block_position + block_width_max * offset_direction
+                placing_pos_with_tolerance = central_block_position + (
+                            block_width_max + Tower.placing_horiz_spacing) * offset_direction
+
+                block_orientation = central_block_orientation
+
+            assert 0 in occupied_positions and 2 in occupied_positions, "Stupid blocks placing!"
 
         # Case 3
         if len(highest_layer) == 1:
@@ -304,7 +322,8 @@ class Tower:
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
 
-                placing_pos = block0_pos - (block_width_max + Tower.placing_spacing) * offset_direction
+                placing_pos = block0_pos - block_width_max * offset_direction
+                placing_pos_with_tolerance = block0_pos - (block_width_max + Tower.placing_horiz_spacing) * offset_direction
 
                 block_orientation = block0_orientation
 
@@ -319,7 +338,8 @@ class Tower:
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
 
-                placing_pos = block1_pos + (block_width_max + Tower.placing_spacing) * offset_direction
+                placing_pos = block1_pos + block_width_max * offset_direction
+                placing_pos_with_tolerance = block1_pos + (block_width_max + Tower.placing_horiz_spacing) * offset_direction
 
                 block_orientation = block1_orientation
 
@@ -334,7 +354,8 @@ class Tower:
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
 
-                placing_pos = block2_pos + (block_width_max + Tower.placing_spacing) * offset_direction
+                placing_pos = block2_pos + block_width_max * offset_direction
+                placing_pos_with_tolerance = block2_pos + (block_width_max + Tower.placing_horiz_spacing) * offset_direction
 
                 block_orientation = block2_orientation
 
@@ -344,7 +365,10 @@ class Tower:
         print(f"Highest layer: {highest_layer}")
         print(f"Highest full layer: {highest_full_layer}")
 
-        return np.concatenate((placing_pos, block_orientation.elements)), num_of_blocks
+        return {'pos': placing_pos,
+                'pos_with_tolerance': placing_pos_with_tolerance,
+                'orientation': block_orientation,
+                'num_of_blocks': num_of_blocks}
 
     def get_angle_to_ground(self, num):
         q = Quaternion(self.get_orientation(num))

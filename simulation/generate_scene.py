@@ -4,6 +4,7 @@ from constants import *
 from pusher import Pusher
 from tower import Tower
 from extractor import Extractor
+import math
 
 
 def generate_textures_and_materials_assets():
@@ -187,11 +188,28 @@ def generate_scene(num_blocks=54,
                 <!-- extractor -->
                 {Extractor.generate_xml()}
                 
-                <!--
-                <body name="block_test" pos="{Extractor.HOME_POS[0]} {Extractor.HOME_POS[1]} {Extractor.HOME_POS[2]}" euler="0 0 0" mocap="true">
-                        <geom mass="{block_mass_mean}" pos="0 0 0" class="block" size="{block_length_mean/2} {block_width_mean/2} {block_height_mean/2}" type="box" rgba="1 0 0 1"/>
+                <!-- zwischenablage -->
+                <body name="zwischenablage" 
+                      pos="{zwischanablage_pos[0]} {zwischanablage_pos[1]} {zwischanablage_pos[2]}" 
+                      quat="{zwischenablage_quat_elem[0]} {zwischenablage_quat_elem[1]} {zwischenablage_quat_elem[2]} {zwischenablage_quat_elem[3]}">
+                    <geom name="base" type="box" friction="0 0 0" pos="0 0 0" size="{zwischanablage_base_size[0]} {zwischanablage_base_size[1]} {zwischanablage_base_size[2]}"/>
+                    <geom name="bottom_wall"
+                          friction="0 0 0" 
+                          type="box"
+                          pos="{zwischanablage_base_size[0] + zwischanablage_bottom_wall_size[0]} 0 {-zwischanablage_base_size[2] + zwischanablage_bottom_wall_size[2]}" 
+                          size="{zwischanablage_bottom_wall_size[0]} {zwischanablage_bottom_wall_size[1]} {zwischanablage_bottom_wall_size[2]}"/>
+                    <geom name="side_wall"
+                          friction="0 0 0"
+                          type="box" 
+                          pos="0 {-zwischanablage_base_size[1] - zwischanablage_side_wall_size[1]} {-zwischanablage_base_size[2] + zwischanablage_side_wall_size[2]}" 
+                          size="{zwischanablage_side_wall_size[0]} {zwischanablage_side_wall_size[1]} {zwischanablage_side_wall_size[2]}"/>
                 </body>
-                -->                 
+                
+                <body name="cart" pos="0 0 1">
+                    <joint name="cart_joint_y" type="slide" axis="0 1 0" damping="{2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/> 
+                    <joint name="cart_joint_z" type="slide" axis="0 0 1" damping="{2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/> 
+                    <geom type="box" pos="0 0 0" size="0.5 0.5 0.5" mass="100"/>
+                </body>              
         
             </worldbody>
             
@@ -214,7 +232,11 @@ def generate_scene(num_blocks=54,
                 <position name="finger1_actuator" kp="{Extractor.finger_kp}" gear="1 0 0 0 0 0" joint="finger1_joint"/>
                 <position name="finger2_actuator" kp="{Extractor.finger_kp}" gear="1 0 0 0 0 0" joint="finger2_joint"/>
                 
-                
+                <!-- cart -->
+                <velocity name="cart_actuator_y" joint="cart_joint_y" kv="10000"/>                          
+                <velocity name="cart_actuator_z" joint="cart_joint_z" kv="10000"/>
+                <!--<position name="cart_pos_actuator_y" joint="cart_joint_y" kp="10000"/> 
+                <position name="cart_pos_actuator_z" joint="cart_joint_z" kp="10000"/>-->                                               
                 
                 <!--
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_slide"/>

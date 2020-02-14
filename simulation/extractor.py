@@ -4,11 +4,29 @@ from pyquaternion import Quaternion
 from tower import Tower
 import time
 from utils.utils import get_intermediate_rotations
+import logging
+import colorlog
+
+# specify logger
+# DEBUG: Detailed information, typically of interest only when diagnosing problems.
+# INFO: Confirmation that things are working as expected.
+# WARNING: An indication that something unexpected happened, or indicative of some problem in
+# the near future (e.g. ‘disk space low’). The software is still working as expected.
+# ERROR: Due to a more serious problem, the software has not been able to perform some function.
+# CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
+
+log = logging.Logger(__name__)
+# formatter = colorlog.ColoredFormatter('%(log_color)s%(asctime)s:%(levelname)s:%(funcName)s:%(message)s')
+formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.DEBUG)
+log.addHandler(stream_handler)
 
 class Extractor:
 
     size = 0.005 * scaler
-    width = 0.030 * scaler
+    width = 0.050 * scaler
     finger_length = 0.020 * scaler
     finger_mass = 0.0125 * scaler ** 3
     finger_kp = finger_mass * 10000
@@ -23,13 +41,15 @@ class Extractor:
     finger1_pos = 0
     finger2_pos = 0
 
-    distance_between_fingers_close = block_width_mean * 0.7
-    distance_between_fingers_open = block_width_mean * 1.6
+    distance_between_fingers_close_narrow = block_width_mean * 0.9
+    distance_between_fingers_open_narrow = block_width_mean * 1.6
+    distance_between_fingers_close_wide = block_length_min * 0.9
+    distance_between_fingers_open_wide = block_length_mean * 1.2
 
     grasping_depth = block_width_mean/3*2
 
     translation_to_move_slowly = np.zeros(3)
-    intermediate_rotations_num = 600
+    intermediate_rotations_num = 600 * 2
     intermediate_rotations = []
 
     counter = 0
@@ -126,11 +146,17 @@ class Extractor:
         self.finger1_pos = -offset + (Extractor.width - 2 * Extractor.size)
         self.finger2_pos = offset - (Extractor.width - 2 * Extractor.size)
 
-    def open(self):
-        self.set_finger_distance(self.distance_between_fingers_open)
+    def open_narrow(self):
+        self.set_finger_distance(self.distance_between_fingers_open_narrow)
 
-    def close(self):
-        self.set_finger_distance(self.distance_between_fingers_close)
+    def close_narrow(self):
+        self.set_finger_distance(self.distance_between_fingers_close_narrow)
+
+    def open_wide(self):
+        self.set_finger_distance(self.distance_between_fingers_open_wide)
+
+    def close_wide(self):
+        self.set_finger_distance(self.distance_between_fingers_close_wide)
 
     # Returns quarter in which the extractor is located
     # The quarters are defined around the origin as follows:
@@ -156,8 +182,8 @@ class Extractor:
 
     def _get_stopovers(self, start_quarter, end_quarter, height):
         assert start_quarter in [1, 2, 3, 4] and end_quarter in [1, 2, 3, 4]
-        print(f"Start quarter: {start_quarter}.")
-        print(f"End quarter: {end_quarter}.")
+        log.debug(f"Start quarter: {start_quarter}.")
+        log.debug(f"End quarter: {end_quarter}.")
         distance_from_origin = block_length_mean * 2
 
         stopovers = []
@@ -253,7 +279,7 @@ class Extractor:
         self.move_slowly(intermediate_target)
         self.move_slowly(target_pos)
         self._sleep_simtime(0.2)
-        self.open()
+        self.open_narrow()
 
     def pull(self, block_id):
         block_quat = Quaternion(self.tower.get_orientation(block_id)) * Quaternion(axis=[0, 0, 1], degrees=180)
@@ -269,6 +295,15 @@ class Extractor:
         target = np.array(block_pos + (block_length_mean + (
                 Extractor.finger_length * 2 + Extractor.size)) * block_x_face_normal_vector)
         self.set_position(target)
+
+    def move_from_block_vert(self):
+        self.translate_slowly(
+            np.array([
+                0,
+                0,
+                0.03
+            ]) * scaler
+        )
 
     def translate(self, v_translation):
         assert isinstance(v_translation, np.ndarray), "Translation vector must be of type np.ndarray"
@@ -303,6 +338,112 @@ class Extractor:
         while np.any(self.translation_to_move_slowly):
             self._sleep_simtime(0.2)
 
+    def extract_and_put_on_top(self, id):
+
+        # extracting
+        self.move_to_block(id)
+        self.close_narrow()
+        self._sleep_simtime(0.2)
+        self.pull(id)
+        self._sleep_simtime(0.3)
+
+        # move through stopovers (ignore the last)
+        stopovers = self._get_stopovers(
+            self._get_quarter(self.get_position()),
+            self._get_quarter(zwischanablage_pos),
+            zwischanablage_pos[2]
+        )
+        for i in range(len(stopovers) - 1):  # ignore the last stopover
+            self.move_slowly(stopovers[i])
+
+        # put on the zwischenablage and regrasp
+        self.put_on_zwischenablage()
+        self._sleep_simtime(0.5)
+        self.take_from_zwischenablage()
+        log.debug("Taken")
+
+        # get placing position and orientation
+        pose_info = self.tower.get_placing_pose(self.tower.get_positions())
+        pos_with_tolerance = pose_info['pos_with_tolerance']
+        pos = pose_info['pos']
+        block_orientation = pose_info['orientation']
+        stopovers = self._get_stopovers(
+            self._get_quarter(self.get_position()),
+            self._get_quarter(pos_with_tolerance),
+            pos_with_tolerance[2] + 0.03 * scaler
+        )
+
+        # move through stopovers
+        for stop in stopovers:
+            self.move_slowly(stop)
+
+        # rotate
+        gripper_orientation = block_orientation * Quaternion(axis=x_unit_vector, degrees=90) * Quaternion(axis=y_unit_vector, degrees=90)
+        self.rotate_slowly(gripper_orientation)
+
+        # move to the target position
+        self.move_slowly(pos)
+        self._sleep_simtime(0.1)
+
+        # palce
+        self.open_wide()
+
+        # move from block
+        self.move_from_block_vert()
+        self._sleep_simtime(0.3)
+        self.go_home()
+
+    def put_on_zwischenablage(self):
+        # offset of the gripper relative to the zwischenablage
+        offset_vector = np.array([
+            zwischanablage_base_size[0] - block_width_mean/2,
+            zwischanablage_base_size[1] + block_width_mean/3,
+            zwischanablage_base_size[2] + block_height_mean
+        ])
+        rotation = Quaternion(zwischenablage_quat_elem) * Quaternion(axis=z_unit_vector, degrees=90)
+        offset_vector = Quaternion(zwischenablage_quat_elem).rotate(offset_vector)
+        stopover = zwischanablage_pos + np.array([0, 0, 0.1]) * scaler
+        self.move_slowly(stopover)
+        self.rotate_slowly(rotation)
+        target = zwischanablage_pos + offset_vector
+        self.move_slowly(target)
+        self.open_narrow()
+
+
+    def take_from_zwischenablage(self):
+        # move extractor to a intermediate position to avoid collisions
+        intermediate_translation = np.array([
+            zwischanablage_base_size[0] - block_width_mean,
+            0,
+            block_length_mean
+        ])
+        intermediate_translation = zwischenablage_quat.rotate(intermediate_translation)
+        self.move_slowly(zwischanablage_pos + intermediate_translation)
+
+        # orient extractor to grip the block on the long side
+        orientation = Quaternion(zwischenablage_quat_elem) * Quaternion(axis=y_unit_vector, degrees=-90)
+        self.rotate_slowly(orientation)
+
+        # open the gripper
+        self.open_wide()
+
+        # translate to the gripping position
+        translation = np.array([
+            zwischanablage_base_size[0] - block_width_mean/2,
+            0,
+            zwischanablage_base_size[2] + block_height_mean/2
+        ])
+        translation = zwischenablage_quat.rotate(translation)
+        self.move_slowly(zwischanablage_pos + translation)
+
+        # close the gripper
+        self.close_wide()
+        self._sleep_simtime(0.3)
+
+
+        # move slightly upwards
+        self.translate_slowly(np.array([0, 0, 0.05]) * scaler)
+
     # The path is calculated according to the quarters in which extractor and the target are located
     def move_to_block(self, num):
         block_quat = Quaternion(self.tower.get_orientation(num)) * Quaternion(axis=[0, 0, 1], degrees=180)
@@ -322,23 +463,14 @@ class Extractor:
 
         self.set_orientation(block_quat)
         self._sleep_simtime(0.3)
+        log.debug('Orientation set!')
         self.set_position(intermediate_target)
         self._sleep_simtime(0.2)
+        log.debug('Intermediate position set')
 
         self.set_position(target)
         self._sleep_simtime(0.2)
-
-        self.close()
-        self._sleep_simtime(0.2)
-        self.pull(num)
-        self._sleep_simtime(0.3)
-
-        placing_pose, num_of_blocks = self.tower.get_placing_pose(self.tower.get_positions())
-        self.put_on_top(placing_pose, num_of_blocks)
-        self._sleep_simtime(0.7)
-        self.move_from_block(num)
-        self._sleep_simtime(0.2)
-        self.go_home()
+        log.debug('Position set')
 
     @staticmethod
     def _point_projection_on_line(line_point1, line_point2, point):
@@ -388,15 +520,6 @@ class Extractor:
         while self.t * g_timestep < current_time + t:
             time.sleep(0.05)
 
-    def test_orientation(self):
-        orientations = []
-        for i in range(3):
-            orientations.append(self.tower.get_orientation(self.counter + i))
-        orientation = np.mean(orientations)
-        self.set_orientation(Quaternion(orientation))
-        self.counter += 3
-
-
     @staticmethod
     def generate_xml():
         return f'''<body name="extractor" pos="{Extractor.HOME_POS[0]} {Extractor.HOME_POS[1]} {Extractor.HOME_POS[2]}" euler="0 0 0">
@@ -410,11 +533,11 @@ class Extractor:
                             <geom type="box" pos="0 0 0" size="{Extractor.size} {Extractor.width} {Extractor.size}" mass="{Extractor.base_mass}"/>
                             <body name="finger1" pos="{-Extractor.finger_length - Extractor.size} {-Extractor.width + Extractor.size} 0">
                                 <joint name="finger1_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
-                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="50 50 50"/>
+                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="{1*5} {0.005*5} {0.0001*5}"/>
                             </body>
                             <body name="finger2" pos="{-Extractor.finger_length - Extractor.size} {Extractor.width - Extractor.size} 0">
                                 <joint name="finger2_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
-                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="50 50 50"/>
+                                <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="{1*5} {0.005*5} {0.0001*5}"/>
                             </body>                            
                             <geom type="box" size="0.4 0.4 0.4" mass="0.1" rgba="1 0 0 1" pos="0 0 0"/>
                         </body>'''
