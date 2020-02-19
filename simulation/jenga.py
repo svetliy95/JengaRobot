@@ -43,11 +43,12 @@ log.addHandler(stream_handler)
 # globals
 on_screen_rendering = True
 plot_force = False
-automatize_pusher = 1
+automatize_pusher = 0
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
 cart_pos = 0
+cart_angle = 0
 
 def off_screen_render_and_plot_errors():
     positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
@@ -146,7 +147,7 @@ def start_keyboard_listener():
 
 
 def on_press(key):
-    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll, move_extractor_fl, cart_pos
+    global fb_x, fb_y, fb_z, fb_pitch, fb_yaw, fb_roll, move_extractor_fl, cart_pos, cart_angle
 
     try:
         if key.char == '5':
@@ -172,9 +173,9 @@ def on_press(key):
         if key.char == ',':
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
-            # pusher.push()
-            # move_extractor_fl = True
-            Thread(target=extractor.take_from_zwischenablage).start()
+            # Thread(target=extractor.set_position_vel, args=(np.array([10, 10, 10]), )).start()
+            Thread(target=extractor.set_orientation, args=(Quaternion(axis=[0, 0, 1], degrees=90), )).start()
+            Thread(target=extractor.set_position, args=(np.array([10, 10, 10]), )).start()
         if key.char == 'q':
             set_screenshot_flag()
     except AttributeError:
@@ -307,6 +308,10 @@ def update_line(data):
     plt.plot(data)
     displacement_fig.canvas.draw()
 
+def second_order_system_step_response(t):
+    w_n = 25
+    return 1 - math.exp(-w_n*t) - w_n * t * math.exp(-w_n*t) if t > 0.001 else 0
+
 # simulation loop
 t = 0
 start_time = time.time()
@@ -320,21 +325,47 @@ while True:
     extractor.update_positions(t)
     sim.step()
 
-    # control cart
-    current_velocity = (sim.data.get_body_xpos('cart')[1] - previous_pos)/g_timestep
-    log.debug(f"Current vel: {current_velocity}")
-    previous_pos = sim.data.get_body_xpos('cart')[1]
-    sim.data.ctrl[-1] = pid_z(sim.data.get_body_xpos('cart')[2])  # vel z
-    sim.data.ctrl[-2] = pid_y(sim.data.get_body_xpos('cart')[1] - cart_pos) # vel y
-    # sim.data.ctrl[-3] = 0  # vel z
-    # vel = 0
-    # if abs(cart_pos - sim.data.get_body_xpos('cart')[1]) > 0.005:
-    #     vel = 0.000000001 * math.copysign(1, cart_pos - sim.data.get_body_xpos('cart')[1])
-    # else:
-    #     vel = 0
-    # control_v = pid(vel - current_velocity)
-    # log.debug(f"Y_vel: {control_v}")
-    # sim.data.ctrl[-4] = control_v  # vel y
+    # # control cart
+    # current_velocity = (sim.data.get_body_xpos('cart')[1] - previous_pos)/g_timestep
+    # # log.debug(f"Current vel: {current_velocity}")
+    # previous_pos = sim.data.get_body_xpos('cart')[1]
+    #
+    # # z-axis
+    # z_diff = 1 - sim.data.get_body_xpos('cart')[2]
+    # z_diff_sign = math.copysign(1, z_diff)
+    # z_vel_tolerance = 0.2
+    # z_vel_target = 5
+    # # log.debug(f"Z_diff = {z_diff}")
+    # sim.data.ctrl[15] = z_diff_sign * second_order_system_step_response(abs(z_diff))  # vel z
+    # sim.data.ctrl[17] = 0  # pos z
+    #
+    # # y-axis
+    # y_diff = cart_pos - sim.data.get_body_xpos('cart')[1]
+    # y_diff_sign = math.copysign(1, y_diff)
+    # y_vel_tolerance = 0.2
+    # y_vel_target = 1
+    # # log.debug(f"Vel: {y_vel}")
+    # sim.data.ctrl[14] = y_diff_sign * second_order_system_step_response(abs(y_diff))  # vel y
+    # sim.data.ctrl[16] = cart_pos  # pos y
+    #
+    # # z-axis rotation
+    # quat = sim.data.get_body_xquat('cart')
+    # quat = Quaternion(quat)
+    # ypr = quat.yaw_pitch_roll
+    # current_z_angle = math.degrees(ypr[0])
+    # # log.debug(f"Current angle: {current_z_angle}")
+    # # log.debug(f"Target angle: {cart_angle}")
+    # z_angle_diff = math.radians(cart_angle) - math.radians(current_z_angle)
+    # z_angle_diff_sign = math.copysign(1, z_angle_diff)
+    # z_angle_vel_tolerance = 0.5
+    # z_angle_vel_target = 0.1
+    # sim.data.ctrl[18] = z_angle_diff_sign * second_order_system_step_response(abs(z_angle_diff)) * z_angle_vel_target  # vel z angle
+    # sim.data.ctrl[19] = cart_angle
+
+
+
+
+
 
     # get positions of blocks and plot images
     if t % 100 == 0 and not on_screen_rendering:

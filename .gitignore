@@ -199,3 +199,4 @@ dmypy.json
 
 # mujoco log file
 MUJOCO_LOG.TXT
+*.log

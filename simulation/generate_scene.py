@@ -206,8 +206,9 @@ def generate_scene(num_blocks=54,
                 </body>
                 
                 <body name="cart" pos="0 0 1">
-                    <joint name="cart_joint_y" type="slide" axis="0 1 0" damping="{2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/> 
-                    <joint name="cart_joint_z" type="slide" axis="0 0 1" damping="{2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/> 
+                    <joint name="cart_joint_y" type="slide" axis="0 1 0" damping="{0 * 2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/> 
+                    <joint name="cart_joint_z" type="slide" axis="0 0 1" damping="{0 * 2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/> 
+                    <joint name="cart_hinge_z" type="hinge" axis="0 0 1" damping="{0 * 2 * 100 * math.sqrt(10000 / 100)}" pos="0 0 0"/>
                     <geom type="box" pos="0 0 0" size="0.5 0.5 0.5" mass="100"/>
                 </body>              
         
@@ -223,20 +224,33 @@ def generate_scene(num_blocks=54,
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="z_pusher_hinge"/>
                 
                 <!-- extractor actuators -->
-                <position name="extractor_slide_x_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_slide_x"/>
-                <position name="extractor_slide_y_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_slide_y"/>
-                <position name="extractor_slide_z_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_slide_z"/>
-                <position name="extractor_hinge_x_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_hinge_x"/>
-                <position name="extractor_hinge_y_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_hinge_y"/>
-                <position name="extractor_hinge_z_actuator" kp="{Extractor.base_kp}" gear="1 0 0 0 0 0" joint="extractor_hinge_z"/>
+                <!-- position -->
+                <position name="extractor_slide_x_actuator" kp="{Extractor.base_kp/1000}" gear="1 0 0 0 0 0" joint="extractor_slide_x"/>
+                <position name="extractor_slide_y_actuator" kp="{Extractor.base_kp/1000}" gear="1 0 0 0 0 0" joint="extractor_slide_y"/>
+                <position name="extractor_slide_z_actuator" kp="{Extractor.base_kp/1000}" gear="1 0 0 0 0 0" joint="extractor_slide_z"/>
+                <position name="extractor_hinge_x_actuator" kp="{Extractor.base_kp/1000}" gear="1 0 0 0 0 0" joint="extractor_hinge_x"/>
+                <position name="extractor_hinge_y_actuator" kp="{Extractor.base_kp/1000}" gear="1 0 0 0 0 0" joint="extractor_hinge_y"/>
+                <position name="extractor_hinge_z_actuator" kp="{Extractor.base_kp/1000}" gear="1 0 0 0 0 0" joint="extractor_hinge_z"/>
+                <!-- velocity -->
+                <velocity name="extractor_slide_x_actuator_vel" kv="{200000}" gear="1 0 0 0 0 0" joint="extractor_slide_x"/>
+                <velocity name="extractor_slide_y_actuator_vel" kv="{200000}" gear="1 0 0 0 0 0" joint="extractor_slide_y"/>
+                <velocity name="extractor_slide_z_actuator_vel" kv="{200000}" gear="1 0 0 0 0 0" joint="extractor_slide_z"/>
+                
+                <velocity name="extractor_hinge_x_actuator_vel" kv="{200000}" gear="1 0 0 0 0 0" joint="extractor_hinge_x"/>
+                <velocity name="extractor_hinge_y_actuator_vel" kv="{200000}" gear="1 0 0 0 0 0" joint="extractor_hinge_y"/>
+                <velocity name="extractor_hinge_z_actuator_vel" kv="{200000}" gear="1 0 0 0 0 0" joint="extractor_hinge_z"/>
+                
+                <!-- fingers -->
                 <position name="finger1_actuator" kp="{Extractor.finger_kp}" gear="1 0 0 0 0 0" joint="finger1_joint"/>
                 <position name="finger2_actuator" kp="{Extractor.finger_kp}" gear="1 0 0 0 0 0" joint="finger2_joint"/>
                 
                 <!-- cart -->
                 <velocity name="cart_actuator_y" joint="cart_joint_y" kv="10000"/>                          
                 <velocity name="cart_actuator_z" joint="cart_joint_z" kv="10000"/>
-                <!--<position name="cart_pos_actuator_y" joint="cart_joint_y" kp="10000"/> 
-                <position name="cart_pos_actuator_z" joint="cart_joint_z" kp="10000"/>-->                                               
+                <position name="cart_pos_actuator_y" joint="cart_joint_y" kp="10"/> 
+                <position name="cart_pos_actuator_z" joint="cart_joint_z" kp="10"/>
+                <velocity name="cart_vel_actuator_angle_z" joint="cart_hinge_z" kv="10000"/>
+                <position name="cart_pos_actuator_angle_z" joint="cart_hinge_z" kp="10"/>                
                 
                 <!--
                 <position kp="{Pusher.pusher_base_kp}" gear="1 0 0 0 0 0" joint="x_floating_slide"/>
