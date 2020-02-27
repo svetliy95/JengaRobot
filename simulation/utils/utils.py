@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from pyquaternion import Quaternion
+from constants import *
 
 
 def point_projection_on_line(line_point1, line_point2, point):
@@ -121,4 +122,19 @@ def get_intermediate_rotations(q1: Quaternion, q2: Quaternion, steps):
 def angle_between_vectors(a, b):
     return math.acos(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
+
+def get_angle_between_quaternions(q1, q2):
+    q1 = Quaternion(q1)
+    q2 = Quaternion(q2)
+    v1 = q1.rotate(x_unit_vector)
+    v2 = q2.rotate(x_unit_vector)
+    x_error = angle_between_vectors(v1, v2)
+    v1 = q1.rotate(y_unit_vector)
+    v2 = q2.rotate(y_unit_vector)
+    y_error = angle_between_vectors(v1, v2)
+    v1 = q1.rotate(z_unit_vector)
+    v2 = q2.rotate(z_unit_vector)
+    z_error = angle_between_vectors(v1, v2)
+
+    return max(x_error, y_error, z_error)
 

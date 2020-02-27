@@ -5,12 +5,33 @@ import time
 from constants import *
 from utils.utils import *
 from threading import Thread
+import logging
+import colorlog
+from tower import Tower
+import sys
+import traceback
+
+# specify logger
+# DEBUG: Detailed information, typically of interest only when diagnosing problems.
+# INFO: Confirmation that things are working as expected.
+# WARNING: An indication that something unexpected happened, or indicative of some problem in
+# the near future (e.g. ‘disk space low’). The software is still working as expected.
+# ERROR: Due to a more serious problem, the software has not been able to perform some function.
+# CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
+
+log = logging.Logger(__name__)
+# formatter = colorlog.ColoredFormatter('%(log_color)s%(asctime)s:%(levelname)s:%(funcName)s:%(message)s')
+formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.DEBUG)
+log.addHandler(stream_handler)
 
 class Pusher():
     # pusher start pos
     START_X = 0.15 * scaler
     START_Y = 0 * scaler
-    START_Z = 0.005 * scaler
+    START_Z = 0.01 * scaler
 
     # pusher parameter
     pusher_size = 0.005 * scaler
@@ -18,18 +39,22 @@ class Pusher():
     pusher_base_mass = 0.125 * scaler ** 3
     pusher_kp = pusher_mass * 1000
     pusher_base_kp = pusher_base_mass * 1000
-    pusher_base_damping = 2 * pusher_base_mass * sqrt(pusher_base_kp / pusher_base_mass)  # critical damping
+    pusher_base_damping = 2.2 * (pusher_base_mass + pusher_mass) * sqrt(pusher_base_kp / (pusher_base_mass + pusher_mass))  # critical damping
     pusher_damping = 2 * pusher_mass * sqrt(pusher_kp / pusher_mass)  # critical damping
 
+    translation_tolerance = 5 * one_millimeter
+    rotation_tolerance = 5  # in degrees
 
 
 
-    def __init__(self, sim):
+
+    def __init__(self, sim, tower: Tower):
         self.sim = sim
+        self.tower = tower
         self.blocks_num = g_blocks_num
-        self.x = 0
-        self.y = 0
-        self.z = 0
+        self.x = self.START_X
+        self.y = self.START_Y
+        self.z = self.START_Z
         self.q = Quaternion(1, 0, 0, 0)
         self.current_block = 0
 
@@ -37,6 +62,23 @@ class Pusher():
         self.speed = 0.01  # in mm/timestep
         self.translation_to_push = np.zeros(3)  # in mm
         self.t = 0
+
+    # returns the actual position extracted from the engine
+    # offset is used to set the origin between fingers ends
+    def get_actual_pos(self):
+        actual_orientation = self.get_actual_orientation()
+        offset = -(pusher_spring_length + Pusher.pusher_size) * actual_orientation.rotate(x_unit_vector)
+        return self.sim.data.get_body_xpos('pusher_base') + offset
+
+    def get_actual_orientation(self):
+        return Quaternion(self.sim.data.get_body_xquat('pusher_base'))
+
+    # returns the position set by user
+    def get_position(self):
+        return np.array([self.x, self.y, self.z])
+
+    def get_orientation(self):
+        return self.q
 
     def update_position(self, t):
         self.t = t
@@ -53,9 +95,11 @@ class Pusher():
                 self.translation_to_push = np.zeros(3)
 
         yaw_pitch_roll = self.q.yaw_pitch_roll
-        self.sim.data.ctrl[0] = self.x
-        self.sim.data.ctrl[1] = self.y
-        self.sim.data.ctrl[2] = self.z
+        actual_orientation = self.get_actual_orientation()
+        offset = -(pusher_spring_length + Pusher.pusher_size) * actual_orientation.rotate(x_unit_vector)
+        self.sim.data.ctrl[0] = self.x - self.START_X - offset[0]
+        self.sim.data.ctrl[1] = self.y - self.START_Y - offset[1]
+        self.sim.data.ctrl[2] = self.z - self.START_Z - offset[2]
         self.sim.data.ctrl[3] = yaw_pitch_roll[2]
         self.sim.data.ctrl[4] = yaw_pitch_roll[1]
         self.sim.data.ctrl[5] = yaw_pitch_roll[0]
@@ -64,61 +108,142 @@ class Pusher():
         self.x = pos[0]
         self.y = pos[1]
         self.z = pos[2]
+        self.wait_until_translation_done()
 
     def set_orientation(self, q):
         self.q = q
+        self.wait_until_rotation_done()
 
-    def move_pusher_to_block(self, block_num):
+    def _get_stopovers(self, start_quarter, end_quarter, height):
+        assert start_quarter in [1, 2, 3, 4] and end_quarter in [1, 2, 3, 4]
+        log.debug(f"Start quarter: {start_quarter}.")
+        log.debug(f"End quarter: {end_quarter}.")
+        distance_from_origin = block_length_mean * 3
+
+        stopovers = []
+        if start_quarter == 1 and end_quarter == 2:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(y_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 1 and end_quarter == 4:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(x_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 2 and end_quarter == 1:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(y_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 2 and end_quarter == 3:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(-x_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 3 and end_quarter == 2:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(-x_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 3 and end_quarter == 4:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(-y_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 4 and end_quarter == 3:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(-y_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 4 and end_quarter == 1:
+            q = Quaternion(axis=z_unit_vector, degrees=45)
+            stopover = q.rotate(x_unit_vector) * distance_from_origin
+            stopovers = [np.array(stopover) + np.array([0, 0, height])]
+        if start_quarter == 2 and end_quarter == 4:
+            stopovers = self._get_stopovers(2, 3, height) + self._get_stopovers(3, 4, height)
+        if start_quarter == 4 and end_quarter == 2:
+            stopovers = self._get_stopovers(4, 1, height) + self._get_stopovers(1, 2, height)
+        if start_quarter == 1 and end_quarter == 3:
+            stopovers = self._get_stopovers(1, 2, height) + self._get_stopovers(2, 3, height)
+        if start_quarter == 3 and end_quarter == 1:
+            stopovers = self._get_stopovers(3, 4, height) + self._get_stopovers(4, 1, height)
+        if start_quarter == end_quarter:
+            stopovers = []
+
+        return stopovers
+
+    @staticmethod
+    def _get_quarter(pos):
+        assert pos.size == 3, "Argument 'pos' is not a 3d array!"
+        x = pos[0]
+        y = pos[1]
+        if y >= abs(x):
+            return 1
+        if y <= -abs(x):
+            return 3
+        if x >= 0 and abs(y) < abs(x):
+            return 4
+        if x < 0 and abs(y) < abs(x):
+            return 2
+
+    def move_to_block(self, block_num):
         gap = 5 * one_millimeter
 
         # get orientation of the target block as a quaternion
-        block_quat = Quaternion(self.sim.data.sensordata[3 * self.blocks_num + block_num * 4 + 0],
-                                self.sim.data.sensordata[3 * self.blocks_num + block_num * 4 + 1],
-                                self.sim.data.sensordata[3 * self.blocks_num + block_num * 4 + 2],
-                                self.sim.data.sensordata[3 * self.blocks_num + block_num * 4 + 3])
+        block_quat = Quaternion(self.tower.get_orientation(block_num))
+        block_pos = np.array(self.tower.get_position(block_num))
+
         block_x_face_normal_vector = block_quat.rotate(x_unit_vector)
-        target_x = self.sim.data.sensordata[block_num * 3 + 0] - self.START_X + (
-                    block_length_mean / 2 + self.pusher_size + pusher_spring_length + gap) * block_x_face_normal_vector[0]
-        target_y = self.sim.data.sensordata[block_num * 3 + 1] - self.START_Y + (
-                    block_length_mean / 2 + self.pusher_size + pusher_spring_length + gap) * block_x_face_normal_vector[1]
-        target_z = self.sim.data.sensordata[block_num * 3 + 2] - self.START_Z + (
-                    block_length_mean / 2 + self.pusher_size + pusher_spring_length + gap) * block_x_face_normal_vector[2]
+        target_x = block_pos[0] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[0]
+        target_y = block_pos[1] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[1]
+        target_z = block_pos[2] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[2]
 
         target = np.array([target_x, target_y, target_z]) + np.array(block_x_face_normal_vector) * block_length_mean
 
         # move pusher backwards to avoid collisions
         self.move_along_own_axis('x', block_length_mean)
-        self._sleep_timesteps(30)
 
-        # move pusher along its own y axis first to avoid collisions
-        self.move_along_own_axis_towards_point('y', target)
-        self._sleep_timesteps(30)
+        # move through stopovers
+        stopovers = self._get_stopovers(self._get_quarter(self.get_position()),
+                                        self._get_quarter(target),
+                                        target[2])
+        for stopover in stopovers:
+            self.set_position(stopover)
 
         # rotate pusher towards the block
-        self.q = block_quat
-        # self._sleep_timesteps(30)
+        self.set_orientation(block_quat)
 
-        # move pusher along its own z axis first to avoid collisions
-        self.move_along_own_axis_towards_point('z', target)
-        # self._sleep_timesteps(30)
+        # move to intermediate target
+        self.set_position(target)
 
-        # move pusher along its own y axis first to avoid collisions (needed by side changes)
-        self.move_along_own_axis_towards_point('y', target)
-        self._sleep_timesteps(30)
-
-        # move towards real target
+        # move to the end target
         target = np.array([target_x, target_y, target_z])
         self.set_position(target)
+
+
+        # # move pusher along its own y axis first to avoid collisions
+        # self.move_along_own_axis_towards_point('y', target)
+        # self._sleep_simtime(0.3)
+
+
+        # self._sleep_timesteps(30)
+
+
+        # # move pusher along its own z axis first to avoid collisions
+        # self.move_along_own_axis_towards_point('z', target)
+        # # self._sleep_timesteps(30)
+        #
+        # # move pusher along its own y axis first to avoid collisions (needed by side changes)
+        # self.move_along_own_axis_towards_point('y', target)
+        # self._sleep_simtime(0.3)
+        #
+        # # move towards real target
+        # target = np.array([target_x, target_y, target_z])
+        # self.set_position(target)
 
     def move_pusher_to_next_block(self):
         if self.current_block < g_blocks_num - 1:
             self.current_block += 1
-            self.move_pusher_to_block(self.current_block)
+            self.move_to_block(self.current_block)
 
     def move_pusher_to_previous_block(self):
         if self.current_block > 0:
             self.current_block -= 1
-            self.move_pusher_to_block(self.current_block)
+            self.move_to_block(self.current_block)
 
     def translate(self, v_translation):
         assert isinstance(v_translation, np.ndarray), "Translation vector must be of type np.ndarray"
@@ -202,3 +327,12 @@ class Pusher():
         current_time = self.t * g_timestep
         while self.t * g_timestep < current_time + t:
             time.sleep(0.05)
+
+    def wait_until_translation_done(self):
+        while np.linalg.norm(self.get_actual_pos() - self.get_position()) > self.translation_tolerance:
+            self._sleep_simtime(0.1)
+
+    def wait_until_rotation_done(self):
+        while math.degrees(get_angle_between_quaternions(self.get_actual_orientation(),
+                                                         self.get_orientation())) > self.rotation_tolerance:
+            self._sleep_simtime(0.1)

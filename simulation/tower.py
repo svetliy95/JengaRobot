@@ -8,7 +8,23 @@ import cv2
 import math
 from utils.utils import *
 import time
-from PIL import Image
+import logging
+import colorlog
+
+# specify logger
+# DEBUG: Detailed information, typically of interest only when diagnosing problems.
+# INFO: Confirmation that things are working as expected.
+# WARNING: An indication that something unexpected happened, or indicative of some problem in
+# the near future (e.g. ‘disk space low’). The software is still working as expected.
+# ERROR: Due to a more serious problem, the software has not been able to perform some function.
+# CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
+
+log = logging.Logger(__name__)
+formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.DEBUG)
+log.addHandler(stream_handler)
 
 
 class Tower:
@@ -19,7 +35,12 @@ class Tower:
     starting_positions = []
     block_sizes = []
     placing_vert_spacing = block_height_max / 3
-    placing_horiz_spacing = block_width_max * 0.1
+    placing_horiz_spacing = one_millimeter
+    pertrubation = True
+    n_sigma = 2
+    position_error = 4 * one_millimeter  # error within n_sigma
+    pos_sigma = (position_error / n_sigma) / math.sqrt(3)
+    orientation_sigma = 32
 
     def __init__(self, sim, viewer):
         self.sim = sim
@@ -27,11 +48,27 @@ class Tower:
 
     def get_position(self, num):
         assert num < self.block_num, "Block num is to high"
-        return self.sim.data.get_body_xpos(self.block_prefix + str(num))
+        exact_pos = self.sim.data.get_body_xpos(self.block_prefix + str(num))
+        if Tower.pertrubation:
+            distorted_pos = normal(exact_pos, self.pos_sigma)
+            log.debug(f"Position error: {np.linalg.norm(distorted_pos - exact_pos)/one_millimeter}")
+            return distorted_pos
+        else:
+            return exact_pos
 
     def get_orientation(self, num):
         assert num < self.block_num, "Block num is to high"
-        return self.sim.data.get_body_xquat(self.block_prefix + str(num))
+        exact_orientation = self.sim.data.get_body_xquat(self.block_prefix + str(num))
+
+        q_distorted = exact_orientation * \
+                      Quaternion(axis=[1, 0, 0], degrees=normal(0, self.orientation_sigma)) * \
+                      Quaternion(axis=[0, 1, 0], degrees=normal(0, self.orientation_sigma)) * \
+                      Quaternion(axis=[0, 0, 1], degrees=normal(0, self.orientation_sigma))
+
+        if Tower.pertrubation:
+            return q_distorted
+        else:
+            return exact_orientation
 
     def _take_picture(self, cam_id):
         w = 4096
@@ -187,14 +224,19 @@ class Tower:
 
             distances[block] = distances_for_block
 
-        print(f"Possible positions: {possible_positions}")
-        print(f"Distances: {distances}")
+        log.debug(f"Possible positions: {possible_positions}")
+        log.debug(f"Distances: {distances}")
         for i in layer:
-            print(f"Position of block #{i}: {positions[i]}")
+            log.debug(f"Position of block #{i}: {positions[i]}")
 
         occupied_positions = {}
         for block in layer:
+            log.debug(f"Current block: {block}")
+            log.debug(f"Distances for current block: {distances}")
+            log.debug(f"Argmin for current block: {np.argmin(distances[block])}")
             occupied_positions[np.argmin(distances[block])] = block
+
+        log.debug(f"Occupied positions: {occupied_positions}")
 
         return occupied_positions
 
@@ -224,14 +266,14 @@ class Tower:
         orientations = np.array(orientations)
         mean_orientation = Quaternion(np.mean(orientations, axis=0))  # get the mean orientation of the top blocks
 
-        print(f"Orientations: {orientations}")
-        print(f"Mean orientation: {mean_orientation}")
-        print(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
+        log.debug(f"Orientations: {orientations}")
+        log.debug(f"Mean orientation: {mean_orientation}")
+        log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
 
         # calculate center of the tower
         tower_center = self.get_center_xy(positions)
         tower_center_with_height = np.concatenate(
-            (tower_center, np.array([highest_full_layer_height + block_height_max/2])))
+            (tower_center, np.array([highest_full_layer_height + block_height_max])))
 
         # calculate centers for each position
         offset_orientation = mean_orientation
@@ -255,6 +297,12 @@ class Tower:
         # get occupied positions
         occupied_positions = self._assign_pos(highest_layer, possible_positions, positions)
 
+        # get stopover
+        stopover = tower_center_with_height + \
+                   offset_direction * (block_width_max * 3) + \
+                   Tower.placing_vert_spacing
+        log.debug(f"Stopover: {stopover}")
+
         # case 1: place the block on the side near the origin perpendicular to the last 3 blocks
         if len(highest_layer) == 3:
             # block orientation must be perpendicular to the top blocks
@@ -268,8 +316,8 @@ class Tower:
                                                                                           coordinate_axes_pos_y,
                                                                                           coordinate_axes_pos_z]))
 
-            placing_pos = tower_center_with_height + block_width_max * offset_direction + np.array([0, 0, block_height_max / 2 + Tower.placing_vert_spacing])
-            placing_pos_with_tolerance = tower_center_with_height + (block_width_max + Tower.placing_horiz_spacing) * offset_direction + np.array([0, 0, block_height_max / 2 + Tower.placing_vert_spacing])
+            placing_pos = tower_center_with_height - block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+            placing_pos_with_tolerance = placing_pos + z_unit_vector * Tower.placing_vert_spacing
 
         # case 2: we consider only the cases where the two blocks are lying near each other
         # the case where the blocks are lying on the sides of the tower is not considered
@@ -287,7 +335,8 @@ class Tower:
                                                                                           coordinate_axes_pos_y,
                                                                                           coordinate_axes_pos_z]))
 
-                placing_pos_with_tolerance = central_block_position - (block_width_max + Tower.placing_horiz_spacing) * offset_direction
+                placing_pos = central_block_position - block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
 
                 block_orientation = central_block_orientation
 
@@ -301,13 +350,13 @@ class Tower:
                                                                              origin=np.array([coordinate_axes_pos_x,
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
-                placing_pos = central_block_position + block_width_max * offset_direction
-                placing_pos_with_tolerance = central_block_position + (
-                            block_width_max + Tower.placing_horiz_spacing) * offset_direction
+                placing_pos = central_block_position + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
 
                 block_orientation = central_block_orientation
 
-            assert 0 in occupied_positions and 2 in occupied_positions, "Stupid blocks placing!"
+            if 0 in occupied_positions and 2 in occupied_positions:
+                log.error("Stupid blocks placing!")
 
         # Case 3
         if len(highest_layer) == 1:
@@ -322,8 +371,8 @@ class Tower:
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
 
-                placing_pos = block0_pos - block_width_max * offset_direction
-                placing_pos_with_tolerance = block0_pos - (block_width_max + Tower.placing_horiz_spacing) * offset_direction
+                placing_pos = block0_pos - block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
 
                 block_orientation = block0_orientation
 
@@ -338,8 +387,8 @@ class Tower:
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
 
-                placing_pos = block1_pos + block_width_max * offset_direction
-                placing_pos_with_tolerance = block1_pos + (block_width_max + Tower.placing_horiz_spacing) * offset_direction
+                placing_pos = block1_pos + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
 
                 block_orientation = block1_orientation
 
@@ -354,20 +403,21 @@ class Tower:
                                                                                               coordinate_axes_pos_y,
                                                                                               coordinate_axes_pos_z]))
 
-                placing_pos = block2_pos + block_width_max * offset_direction
-                placing_pos_with_tolerance = block2_pos + (block_width_max + Tower.placing_horiz_spacing) * offset_direction
+                placing_pos = block2_pos + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
 
                 block_orientation = block2_orientation
 
         num_of_blocks = len(highest_layer)
 
-        print(f"Occupied positions: {occupied_positions}")
-        print(f"Highest layer: {highest_layer}")
-        print(f"Highest full layer: {highest_full_layer}")
+        log.debug(f"Occupied positions: {occupied_positions}")
+        log.debug(f"Highest layer: {highest_layer}")
+        log.debug(f"Highest full layer: {highest_full_layer}")
 
         return {'pos': placing_pos,
                 'pos_with_tolerance': placing_pos_with_tolerance,
                 'orientation': block_orientation,
+                'stopover': stopover,
                 'num_of_blocks': num_of_blocks}
 
     def get_angle_to_ground(self, num):
@@ -436,18 +486,25 @@ class Tower:
         [x, y] = normal([x, y], [pos_sigma, pos_sigma])
         [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs()/2, width_distribution.rvs()/2, height_distribution.rvs()/2]
 
+        # WARNING: debugging code!
+        # if number == 0:
+        #     log.warning("The size of the first block is changed!")
+        #     block_size_z = (block_height_min / 2) * 0.99
+
         Tower.starting_positions.append(np.array([x, y, z + block_height_mean / 2]))
         Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))
-        print(f"Block # {number}: " + str(Tower.block_sizes[-1]))
 
         s = f'''
                     <body name="block{number}" pos="{x} {y} {z + block_height_mean / 2}" euler="0 0 {angle_z}">
+                        <!--
                         <joint type="slide" axis="1 0 0" pos ="0 0 0"/>
                         <joint type="slide" axis="0 1 0" pos ="0 0 0"/>
                         <joint type="slide" axis="0 0 1" pos ="0 0 0"/>
                         <joint type="hinge" axis="1 0 0"  pos ="0 0 0"/>
                         <joint type="hinge" axis="0 1 0" pos ="0 0 0"/>
                         <joint type="hinge" axis="0 0 1"  pos ="0 0 0"/>
+                        -->
+                        <freejoint name="{Tower.block_prefix + "_" + str(number) + "_joint"}"/>
                         <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box" material="mat_block{number}"/>
                     </body>'''
         return s

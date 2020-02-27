@@ -43,12 +43,10 @@ log.addHandler(stream_handler)
 # globals
 on_screen_rendering = True
 plot_force = False
-automatize_pusher = 0
+automatize_pusher = 1
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
-cart_pos = 0
-cart_angle = 0
 
 def off_screen_render_and_plot_errors():
     positions, im1, im2 = tower.get_poses_cv(range(g_blocks_num))
@@ -151,15 +149,15 @@ def on_press(key):
 
     try:
         if key.char == '5':
-            Thread(target=pusher.move_pusher_to_block, args=(5,)).start()
+            Thread(target=pusher.move_to_block, args=(5,)).start()
         if key.char == '6':
-            Thread(target=pusher.move_pusher_to_block, args=(6,)).start()
+            Thread(target=pusher.move_to_block, args=(6,)).start()
         if key.char == '7':
-            Thread(target=pusher.move_pusher_to_block, args=(7,)).start()
+            Thread(target=pusher.move_to_block, args=(7,)).start()
         if key.char == '8':
-            Thread(target=pusher.move_pusher_to_block, args=(8,)).start()
+            Thread(target=pusher.move_to_block, args=(8,)).start()
         if key.char == '9':
-            Thread(target=pusher.move_pusher_to_block, args=(9,)).start()
+            Thread(target=pusher.move_to_block, args=(9,)).start()
         if key.char == '+':
             # pusher.move_pusher_in_direction('up')
             # extractor.open_narrow()
@@ -173,9 +171,7 @@ def on_press(key):
         if key.char == ',':
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
-            # Thread(target=extractor.set_position_vel, args=(np.array([10, 10, 10]), )).start()
-            Thread(target=extractor.set_orientation, args=(Quaternion(axis=[0, 0, 1], degrees=90), )).start()
-            Thread(target=extractor.set_position, args=(np.array([10, 10, 10]), )).start()
+            Thread(target=extractor.extract_and_put_on_top, args=(1, )).start()
         if key.char == 'q':
             set_screenshot_flag()
     except AttributeError:
@@ -194,7 +190,7 @@ def on_press(key):
 
 
 def check_all_blocks():
-    pusher.move_pusher_to_block(0)
+    pusher.move_to_block(0)
     time.sleep(1)
     loose_blocks = []
     force_threshold = 240000
@@ -265,7 +261,7 @@ else:
     viewer = MjRenderContextOffscreen(sim)
 
 tower = Tower(sim, viewer)
-pusher = Pusher(sim)
+pusher = Pusher(sim, tower)
 extractor = Extractor(sim, tower)
 
 # start keyboard listener
@@ -320,52 +316,9 @@ pid_y = PID(1, 0, 0)
 pid_z = PID(1, 0.1, 0.01)
 while True:
     t += 1
-
     pusher.update_position(t)
     extractor.update_positions(t)
     sim.step()
-
-    # # control cart
-    # current_velocity = (sim.data.get_body_xpos('cart')[1] - previous_pos)/g_timestep
-    # # log.debug(f"Current vel: {current_velocity}")
-    # previous_pos = sim.data.get_body_xpos('cart')[1]
-    #
-    # # z-axis
-    # z_diff = 1 - sim.data.get_body_xpos('cart')[2]
-    # z_diff_sign = math.copysign(1, z_diff)
-    # z_vel_tolerance = 0.2
-    # z_vel_target = 5
-    # # log.debug(f"Z_diff = {z_diff}")
-    # sim.data.ctrl[15] = z_diff_sign * second_order_system_step_response(abs(z_diff))  # vel z
-    # sim.data.ctrl[17] = 0  # pos z
-    #
-    # # y-axis
-    # y_diff = cart_pos - sim.data.get_body_xpos('cart')[1]
-    # y_diff_sign = math.copysign(1, y_diff)
-    # y_vel_tolerance = 0.2
-    # y_vel_target = 1
-    # # log.debug(f"Vel: {y_vel}")
-    # sim.data.ctrl[14] = y_diff_sign * second_order_system_step_response(abs(y_diff))  # vel y
-    # sim.data.ctrl[16] = cart_pos  # pos y
-    #
-    # # z-axis rotation
-    # quat = sim.data.get_body_xquat('cart')
-    # quat = Quaternion(quat)
-    # ypr = quat.yaw_pitch_roll
-    # current_z_angle = math.degrees(ypr[0])
-    # # log.debug(f"Current angle: {current_z_angle}")
-    # # log.debug(f"Target angle: {cart_angle}")
-    # z_angle_diff = math.radians(cart_angle) - math.radians(current_z_angle)
-    # z_angle_diff_sign = math.copysign(1, z_angle_diff)
-    # z_angle_vel_tolerance = 0.5
-    # z_angle_vel_target = 0.1
-    # sim.data.ctrl[18] = z_angle_diff_sign * second_order_system_step_response(abs(z_angle_diff)) * z_angle_vel_target  # vel z angle
-    # sim.data.ctrl[19] = cart_angle
-
-
-
-
-
 
     # get positions of blocks and plot images
     if t % 100 == 0 and not on_screen_rendering:
