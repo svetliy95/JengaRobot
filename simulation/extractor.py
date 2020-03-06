@@ -426,8 +426,10 @@ class Extractor:
         self._sleep_simtime(0.3)
         self.go_home()
 
-    def weld_block_to_extractor(self, id):
+        # save new reference position
+        self.tower.ref_positions[id] = pos
 
+    def weld_block_to_extractor(self, id):
         # calculate quaternion q_t so that q_e * q_t = q_b
         # where q_e is the quaternion of the extractor and q_b the quaternion of the block
         q_b = Quaternion(self.tower.get_orientation(id))
@@ -604,5 +606,5 @@ class Extractor:
                             <geom type="box" size="0.4 0.4 0.4" mass="0.1" rgba="1 0 0 1" pos="0 0 0"/>
                             
                             <!-- boxes for axes marking -->
-                            <geom type="box" size="0.2 0.2 0.01" mass="0.1" rgba="0 1 0 1" pos="0 {1} {Extractor.size + 0.01}"/>
+                            <!-- <geom type="box" size="0.2 0.2 0.01" mass="0.1" rgba="0 1 0 1" pos="0 {1} {Extractor.size + 0.01}"/> -->
                         </body>'''

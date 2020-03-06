@@ -2,7 +2,7 @@ import numpy as np
 from pyquaternion import Quaternion
 
 # simulation
-g_timestep = 0.003
+g_timestep = 0.005
 
 # tower
 g_blocks_num = 54

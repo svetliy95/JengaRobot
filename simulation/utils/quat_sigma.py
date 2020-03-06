@@ -21,6 +21,7 @@ for i in range(1000):
 print(f"Original: {q.q}")
 angles = np.array(angles)
 print(f"Mean: {math.degrees(np.mean(angles))}")
+print(f"Distorted quats: {distorted_quats}")
 
 
 

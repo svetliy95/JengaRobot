@@ -138,3 +138,9 @@ def get_angle_between_quaternions(q1, q2):
 
     return max(x_error, y_error, z_error)
 
+def orth_proj(v, u):
+    return (np.dot(u, v)/np.linalg.norm(v)**2) * v
+
+def proj_on_plane(n, v):
+    return v - orth_proj(n, v)
+

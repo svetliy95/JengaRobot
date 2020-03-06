@@ -111,7 +111,7 @@ def generate_scene(num_blocks=54,
             </default>
             
             <!-- customized default -->
-            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" impratio="10" o_solimp="0.999 0.999 0.001 0.5 2" o_solref="0 2" noslip_iterations="0"/> 
+            <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" impratio="10" o_solimp="0.9 0.95 0.001 0.5 2" o_solref="0 2" noslip_iterations="0"/> 
             <!-- -->
             <!--
             <option timestep="{timestep}" integrator="Euler" cone="elliptic" solver="Newton" o_solimp="0.999 0.999 0.01 0.5 2" o_solref="0 5" noslip_iterations="50"/>

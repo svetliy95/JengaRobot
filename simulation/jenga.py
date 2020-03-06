@@ -43,7 +43,7 @@ log.addHandler(stream_handler)
 # globals
 on_screen_rendering = True
 plot_force = False
-automatize_pusher = 1
+automatize_pusher = 0
 g_sensor_data_queue = []
 g_sensors_data_queue_maxsize = 250
 screenshot_fl = False
@@ -161,17 +161,19 @@ def on_press(key):
         if key.char == '+':
             # pusher.move_pusher_in_direction('up')
             # extractor.open_narrow()
-            cart_pos += 10
+            extractor.move_in_direction('up')
         if key.char == '-':
             # pusher.move_pusher_in_direction('down')
             # extractor.close_narrow()
-            cart_pos -= 10
+            extractor.move_in_direction('down')
         if key.char == '.':
             pusher.move_pusher_to_next_block()
         if key.char == ',':
             pusher.move_pusher_to_previous_block()
         if key.char == 'p':
-            Thread(target=extractor.extract_and_put_on_top, args=(1, )).start()
+            tower.get_tilt_2ax(tower.get_positions())
+            tower.get_tilt_1ax(tower.get_positions())
+            log.debug(f'Total z rotation: {tower.get_total_z_rotation(0)}')
         if key.char == 'q':
             set_screenshot_flag()
     except AttributeError:
@@ -202,20 +204,20 @@ def check_all_blocks():
         if i % 3 == 0:
             force_threshold -= 10500
 
-        for j in range(50):
+        for j in range(45):
             force, displacement = pusher.push()
             total_displacement += displacement
-            if force > force_threshold or tower.get_angle_of_highest_block_to_ground() > angle_threshold:
+            log.debug(f"Total displacement: {tower.get_abs_displacement_2ax(i, tower.get_positions()) / one_millimeter}")
+            log.debug(f"Last displacement: {tower.get_last_displacement_2ax(i, tower.get_positions()) / one_millimeter}")
+            if force > force_threshold or tower.get_angle_of_highest_block_to_ground(tower.get_positions()) > angle_threshold:
                 fl = 1
                 break
         if fl == 0:
             loose_blocks.append(i)
-            print(f"Highest blocks: {tower.get_blocks_from_highest_level()}")
-            start = time.time()
-            print(tower.get_full_layers(tower.get_positions()))
-            print(tower.get_center_xy(tower.get_positions()))
-            stop = time.time()
-            print(f"Layers time: {(stop - start) * 1000}ms")
+            log.debug(f"Loose blocks: {loose_blocks}")
+            log.debug(f"Highest blocks: {tower.get_blocks_from_highest_level(tower.get_positions())}")
+            log.debug(tower.get_full_layers(tower.get_positions()))
+            log.debug(tower.get_center_xy(tower.get_positions()))
             extractor.extract_and_put_on_top(i)
         pusher.move_pusher_to_next_block()
         time.sleep(1)

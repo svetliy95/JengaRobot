@@ -10,6 +10,7 @@ from utils.utils import *
 import time
 import logging
 import colorlog
+import copy
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.
@@ -32,19 +33,28 @@ class Tower:
     block_num = 54
     block_prefix = "block"
     sim = None
-    starting_positions = []
+    ref_positions = {}
+    last_ref_positions = {}
+    ref_orientations = {}
+    last_ref_orientations = {}
     block_sizes = []
     placing_vert_spacing = block_height_max / 3
     placing_horiz_spacing = one_millimeter
-    pertrubation = True
+    pertrubation = False
     n_sigma = 2
     position_error = 4 * one_millimeter  # error within n_sigma
     pos_sigma = (position_error / n_sigma) / math.sqrt(3)
-    orientation_sigma = 32
+    orientation_sigma = 2/3
 
     def __init__(self, sim, viewer):
         self.sim = sim
         self.viewer = viewer
+        positions = self.get_positions()
+        orientations = self.get_orientations()
+        self.ref_positions = copy.deepcopy(positions)
+        self.last_ref_positions = copy.deepcopy(positions)
+        self.ref_orientations = copy.deepcopy(orientations)
+        self.last_ref_orientations = copy.deepcopy(orientations)
 
     def get_position(self, num):
         assert num < self.block_num, "Block num is to high"
@@ -58,7 +68,7 @@ class Tower:
 
     def get_orientation(self, num):
         assert num < self.block_num, "Block num is to high"
-        exact_orientation = self.sim.data.get_body_xquat(self.block_prefix + str(num))
+        exact_orientation = Quaternion(self.sim.data.get_body_xquat(self.block_prefix + str(num)))
 
         q_distorted = exact_orientation * \
                       Quaternion(axis=[1, 0, 0], degrees=normal(0, self.orientation_sigma)) * \
@@ -66,9 +76,10 @@ class Tower:
                       Quaternion(axis=[0, 0, 1], degrees=normal(0, self.orientation_sigma))
 
         if Tower.pertrubation:
-            return q_distorted
+            log.debug(f"Orientation error: {math.degrees(get_angle_between_quaternions(q_distorted, exact_orientation))}")
+            return q_distorted.q
         else:
-            return exact_orientation
+            return exact_orientation.q
 
     def _take_picture(self, cam_id):
         w = 4096
@@ -131,19 +142,30 @@ class Tower:
         else:
             return None
 
-    def get_highest_block_id(self):
+    def get_highest_block_id(self, positions):
         max_z = 0
         max_block_num = -1
         for i in range(self.block_num):
-            height = self.get_position(i)[2]
+            height = positions[i][2]
             if height > max_z:
                 max_z = height
                 max_block_num = i
 
         return max_block_num
 
-    def get_blocks_from_highest_level(self):
-        highest_block = self.get_highest_block_id()
+    def get_lowest_block_id(self, positions):
+        min_z = np.Inf
+        min_block_id = -1
+        for i in range(self.block_num):
+            height = positions[i][2]
+            if height < min_z:
+                min_z = height
+                min_block_id = i
+
+        return min_block_id
+
+    def get_blocks_from_highest_level(self, positions):
+        highest_block = self.get_highest_block_id(positions)
         highest_block_pos = self.get_position(highest_block)
 
     def get_positions(self):
@@ -152,6 +174,13 @@ class Tower:
             positions[i] = self.get_position(i)
 
         return positions
+
+    def get_orientations(self):
+        orientations = {}
+        for i in range(g_blocks_num):
+            orientations[i] = self.get_orientation(i)
+
+        return orientations
 
     def get_adjacent_blocks(self, id, positions):
         root_pos = self.get_position(id)
@@ -200,7 +229,7 @@ class Tower:
         return np.array([np.mean(x), np.mean(y)])
 
     def get_highest_layer(self, positions):
-        return self.get_adjacent_blocks(self.get_highest_block_id(), positions)
+        return self.get_adjacent_blocks(self.get_highest_block_id(positions), positions)
 
     def get_highest_full_layer(self, positions):
         max_z = -np.Inf
@@ -433,24 +462,177 @@ class Tower:
 
         return np.mean(angles)
 
-    def get_angle_of_highest_block_to_ground(self):
-        num = self.get_highest_block_id()
+    def get_angle_of_highest_block_to_ground(self, positions):
+        num = self.get_highest_block_id(positions)
         return self.get_angle_to_ground(num)
 
-    def get_displacement(self, num):
-        starting_pos = self.starting_positions[num]
-        return np.linalg.norm(self.get_position(num) - starting_pos)
+    def get_lowest_full_layer(self, positions):
+        min_z = np.Inf
+        lowest_layer = None
+        full_layers = self.get_full_layers(positions)
+        for layer in full_layers:
+            z = self.get_position(layer[0])[2]
+            if z < min_z:
+                lowest_layer = layer
+                min_z = z
 
-    def get_average_displacement(self):
-        displacements = []
-        for i in range(self.block_num):
-            displacements.append(self.get_displacement(i))
+        return lowest_layer
 
-        return np.mean(displacements)
+    def get_lowest_layer(self, positions):
+        return self.get_adjacent_blocks(self.get_lowest_block_id(positions), positions)
 
-    def get_displacement_of_highest_block(self):
-        num = self.get_highest_block_id()
-        return self.get_displacement(num)
+    def mean_vector(self, list_of_vectors):
+        new_list = []
+        for v in list_of_vectors:
+            new_list.append(np.reshape(v, (1, 3)))
+        return np.reshape(np.mean(new_list, axis=0), 3)
+
+    def get_tilt_1ax(self, positions):
+        # calculate 2 tilt directions
+        lowest_layer = self.get_lowest_layer(positions)
+        x = []
+        y = []
+        for id in lowest_layer:
+            orientation = Quaternion(self.get_orientation(id))
+            x.append(orientation.rotate(x_unit_vector))
+            y.append(orientation.rotate(y_unit_vector))
+        x_axis_base = self.mean_vector(x)
+        y_axis_base = self.mean_vector(y)
+        base_normal = np.cross(x_axis_base, y_axis_base)
+
+        highest_layer = self.get_highest_full_layer(positions)
+        x = []
+        y = []
+        for id in highest_layer:
+            orientation = Quaternion(self.get_orientation(id))
+            x.append(orientation.rotate(x_unit_vector))
+            y.append(orientation.rotate(y_unit_vector))
+        x_axis_layer = self.mean_vector(x)
+        y_axis_layer = self.mean_vector(y)
+        normal = np.cross(x_axis_layer, y_axis_layer)
+
+
+        angle = math.degrees(angle_between_vectors(normal, base_normal))
+        log.debug(f"Angle: {angle}")
+
+        return angle
+
+    def get_tilt_2ax(self, positions):
+        # calculate 2 tilt directions
+        lowest_layer = self.get_lowest_layer(positions)
+        x = []
+        y = []
+        for id in lowest_layer:
+            orientation = Quaternion(self.get_orientation(id))
+            x.append(orientation.rotate(x_unit_vector))
+            y.append(orientation.rotate(y_unit_vector))
+        x_axis_base = self.mean_vector(x)
+        y_axis_base = self.mean_vector(y)
+        log.debug(f"X base: {x_axis_base}")
+        log.debug(f"Y base: {y_axis_base}")
+
+        highest_layer = self.get_highest_full_layer(positions)
+        x = []
+        y = []
+        for id in highest_layer:
+            orientation = Quaternion(self.get_orientation(id))
+            x.append(orientation.rotate(x_unit_vector))
+            y.append(orientation.rotate(y_unit_vector))
+
+        x_axis_layer = self.mean_vector(x)
+        y_axis_layer = self.mean_vector(y)
+        normal = np.cross(x_axis_layer, y_axis_layer)
+        log.debug(f"X layer: {x_axis_layer}")
+        log.debug(f"Y layer: {y_axis_layer}")
+        log.debug(f"Normal: {normal}")
+
+        xz_base_normal = np.cross(x_axis_base, z_unit_vector)
+        yz_base_normal = np.cross(y_axis_base, z_unit_vector)
+        log.debug(f"XZ base normal: {xz_base_normal}")
+        log.debug(f"YZ base normal: {yz_base_normal}")
+
+        tilt_vec1 = proj_on_plane(xz_base_normal, normal)
+        tilt_vec2 = proj_on_plane(yz_base_normal, normal)
+        log.debug(f"Tilt vector 1: {tilt_vec1}")
+        log.debug(f"Tilt vector 2: {tilt_vec2}")
+
+        angle_1 = 90 - math.degrees(angle_between_vectors(tilt_vec1, x_axis_base))
+        angle_2 = 90 - math.degrees(angle_between_vectors(tilt_vec2, y_axis_base))
+        log.debug(f"Angle #1: {angle_1}")
+        log.debug(f"Angle #2: {angle_2}")
+
+    def _get_displacement_2ax(self, current_block, ref_pos, positions):
+        displacements = []  # a list of displacement vectors
+        for i in range(g_blocks_num):
+            if i != current_block:
+                displacements.append(positions[i] - ref_pos[i])
+
+        # convert list into array
+        displacements = np.reshape(displacements, (len(displacements), 3))
+
+        # calculate mean
+        mean_displacement = np.mean(displacements, axis=0)
+        log.debug(f"Mean displacement: {mean_displacement/one_millimeter}")
+
+        # calculate base vectors
+        lowest_layer = self.get_lowest_layer(positions)
+        log.debug(f"Lowest layer: {lowest_layer}")
+        x = []
+        y = []
+        for id in lowest_layer:
+            orientation = Quaternion(self.get_orientation(id))
+            x.append(orientation.rotate(x_unit_vector))
+            y.append(orientation.rotate(y_unit_vector))
+        x_axis_base = self.mean_vector(x)
+        y_axis_base = self.mean_vector(y)
+        log.debug(f"X base: {x_axis_base}")
+        log.debug(f"Y base: {y_axis_base}")
+
+        proj_x = orth_proj(x_axis_base, mean_displacement)
+        proj_x_sign = 1 if np.sign(proj_x[0]) == np.sign(x_axis_base[0]) else -1
+        proj_y = orth_proj(y_axis_base, mean_displacement)
+        proj_y_sign = 1 if np.sign(proj_y[0]) == np.sign(y_axis_base[0]) else -1
+        log.debug(f"X_proj: {proj_x}")
+        log.debug(f"Y_proj: {proj_y}")
+
+        displacement_x = proj_x_sign * np.linalg.norm(proj_x)
+        displacement_y = proj_y_sign * np.linalg.norm(proj_y)
+
+        return np.array([displacement_x, displacement_y])
+
+    def _get_displacement_1ax(self, current_block, ref_pos, positions):
+        return np.linalg.norm(self._get_displacement_2ax(current_block, ref_pos, positions))
+
+    def get_last_displacement_2ax(self, current_block, positions):
+        return self._get_displacement_2ax(current_block, self.last_ref_positions, positions)
+
+    def get_last_displacement_1ax(self, current_block, positions):
+        return self._get_displacement_1ax(current_block, self.last_ref_positions, positions)
+
+    def get_abs_displacement_2ax(self, current_block, positions):
+        return self._get_displacement_2ax(current_block, self.ref_positions, positions)
+
+    def get_abs_displacement_1ax(self, current_block, positions):
+        return self._get_displacement_1ax(current_block, self.ref_positions, positions)
+
+    def _get_z_rotation(self, current_block, ref_orientations):
+        actual_orientations = self.get_orientations()
+        angles = []
+        for i in range(g_blocks_num):
+            if i != current_block:
+                q_ref = Quaternion(ref_orientations[i])
+                x_ref = q_ref.rotate(x_unit_vector)
+                q_actual = Quaternion(actual_orientations[i])
+                y_actual = q_actual.rotate(y_unit_vector)
+                angle = math.degrees(angle_between_vectors(x_ref, y_actual)) - 90
+                angles.append(angle)
+        return np.mean(angles)
+
+    def get_total_z_rotation(self, current_block):
+        return self._get_z_rotation(current_block, self.ref_orientations)
+
+    def get_last_z_rotation(self, current_block):
+        return self._get_z_rotation(current_block, self.last_ref_orientations)
 
     @staticmethod
     def generate_block(number, pos_sigma, angle_sigma, spacing):
@@ -472,13 +654,13 @@ class Tower:
             x = 0
             y = -block_width_mean + (number % 3) * block_width_mean
             y += (number % 3) * spacing  # add spacing between blocks
-            z = number // 3 * block_height_mean
+            z = number // 3 * block_height_mean + block_height_mean / 2
             angle_z = normal(0, angle_sigma)  # add disturbance to the angle
         else:  # odd level
             x = -block_width_mean + (number % 3) * block_width_mean
             x += (number % 3) * spacing  # add spacing between blocks
             y = 0
-            z = number // 3 * block_height_mean
+            z = number // 3 * block_height_mean + block_height_mean / 2
             angle_z = normal(90, angle_sigma)  # rotate and add disturbance
 
         # add disturbance to mass, position and sizes
@@ -491,19 +673,9 @@ class Tower:
         #     log.warning("The size of the first block is changed!")
         #     block_size_z = (block_height_min / 2) * 0.99
 
-        Tower.starting_positions.append(np.array([x, y, z + block_height_mean / 2]))
         Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))
-
         s = f'''
-                    <body name="block{number}" pos="{x} {y} {z + block_height_mean / 2}" euler="0 0 {angle_z}">
-                        <!--
-                        <joint type="slide" axis="1 0 0" pos ="0 0 0"/>
-                        <joint type="slide" axis="0 1 0" pos ="0 0 0"/>
-                        <joint type="slide" axis="0 0 1" pos ="0 0 0"/>
-                        <joint type="hinge" axis="1 0 0"  pos ="0 0 0"/>
-                        <joint type="hinge" axis="0 1 0" pos ="0 0 0"/>
-                        <joint type="hinge" axis="0 0 1"  pos ="0 0 0"/>
-                        -->
+                    <body name="block{number}" pos="{x} {y} {z}" euler="0 0 {angle_z}">
                         <freejoint name="{Tower.block_prefix + "_" + str(number) + "_joint"}"/>
                         <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box" material="mat_block{number}"/>
                     </body>'''

@@ -10,6 +10,7 @@ import colorlog
 from tower import Tower
 import sys
 import traceback
+import copy
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.
@@ -38,12 +39,14 @@ class Pusher():
     pusher_mass = 0.0125 * scaler ** 3
     pusher_base_mass = 0.125 * scaler ** 3
     pusher_kp = pusher_mass * 1000
-    pusher_base_kp = pusher_base_mass * 1000
-    pusher_base_damping = 2.2 * (pusher_base_mass + pusher_mass) * sqrt(pusher_base_kp / (pusher_base_mass + pusher_mass))  # critical damping
+    pusher_base_kp = pusher_base_mass * 10000
+    pusher_base_damping = 4 * (pusher_base_mass + pusher_mass) * sqrt(pusher_base_kp / (pusher_base_mass + pusher_mass))  # critical damping
     pusher_damping = 2 * pusher_mass * sqrt(pusher_kp / pusher_mass)  # critical damping
 
     translation_tolerance = 5 * one_millimeter
     rotation_tolerance = 5  # in degrees
+
+    is_welded = False
 
 
 
@@ -181,7 +184,14 @@ class Pusher():
             return 2
 
     def move_to_block(self, block_num):
+        # set current block
+        self.current_block = block_num
+
+        # set gap between the pusher and the block
         gap = 5 * one_millimeter
+
+        # reset last reference positions
+        self.tower.last_ref_positions = copy.deepcopy(self.tower.get_positions())
 
         # get orientation of the target block as a quaternion
         block_quat = Quaternion(self.tower.get_orientation(block_num))
@@ -203,6 +213,7 @@ class Pusher():
                                         target[2])
         for stopover in stopovers:
             self.set_position(stopover)
+            self._sleep_simtime(0.2)
 
         # rotate pusher towards the block
         self.set_orientation(block_quat)
@@ -213,27 +224,6 @@ class Pusher():
         # move to the end target
         target = np.array([target_x, target_y, target_z])
         self.set_position(target)
-
-
-        # # move pusher along its own y axis first to avoid collisions
-        # self.move_along_own_axis_towards_point('y', target)
-        # self._sleep_simtime(0.3)
-
-
-        # self._sleep_timesteps(30)
-
-
-        # # move pusher along its own z axis first to avoid collisions
-        # self.move_along_own_axis_towards_point('z', target)
-        # # self._sleep_timesteps(30)
-        #
-        # # move pusher along its own y axis first to avoid collisions (needed by side changes)
-        # self.move_along_own_axis_towards_point('y', target)
-        # self._sleep_simtime(0.3)
-        #
-        # # move towards real target
-        # target = np.array([target_x, target_y, target_z])
-        # self.set_position(target)
 
     def move_pusher_to_next_block(self):
         if self.current_block < g_blocks_num - 1:
@@ -308,7 +298,8 @@ class Pusher():
         # save block position
         block_pos_before = np.array([self.sim.data.sensordata[self.current_block * 3 + i] for i in range(3)])
         self.move_pusher_in_direction('forward', one_millimeter)
-        self._sleep_timesteps(75)
+        log.warning(f"Calculate the sleeping time right!")
+        self._sleep_simtime(0.225)
         block_pos_after = np.array([self.sim.data.sensordata[self.current_block * 3 + i] for i in range(3)])
         current_sensor_value = -self.sim.data.sensordata[g_blocks_num * 3 + g_blocks_num * 4]
 
@@ -326,10 +317,11 @@ class Pusher():
     def _sleep_simtime(self, t):
         current_time = self.t * g_timestep
         while self.t * g_timestep < current_time + t:
-            time.sleep(0.05)
+            time.sleep(0.01)
 
     def wait_until_translation_done(self):
         while np.linalg.norm(self.get_actual_pos() - self.get_position()) > self.translation_tolerance:
+            log.debug(f"Translation error: {np.linalg.norm(self.get_actual_pos() - self.get_position())}")
             self._sleep_simtime(0.1)
 
     def wait_until_rotation_done(self):
