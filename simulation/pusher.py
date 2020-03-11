@@ -307,7 +307,6 @@ class Pusher():
 
         return current_sensor_value, displacement
 
-
     def _sleep_timesteps(self, n):
         current_timestep = self.t
         while self.t < current_timestep + n:
