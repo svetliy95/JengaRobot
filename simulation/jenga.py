@@ -22,31 +22,47 @@ import logging
 import colorlog
 from simple_pid import PID
 import gym
+import collections
 
+# specify logger
+# DEBUG: Detailed information, typically of interest only when diagnosing problems.
+# INFO: Confirmation that things are working as expected.
+# WARNING: An indication that something unexpected happened, or indicative of some problem in
+# the near future (e.g. ‘disk space low’). The software is still working as expected.
+# ERROR: Due to a more serious problem, the software has not been able to perform some function.
+# CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
+log = logging.Logger(__name__)
+# formatter = colorlog.ColoredFormatter('%(log_color)s%(asctime)s:%(levelname)s:%(funcName)s:%(message)s')
+formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.DEBUG)
+log.addHandler(stream_handler)
+
+file_logger = logging.Logger("file_logger")
+file_formatter = logging.Formatter('%(asctime)s:%(funcName)s:%(message)s')
+file_handler = logging.FileHandler(filename='jenga.log')
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.DEBUG)
+file_logger.addHandler(file_handler)
+
+class Status:
+    ready = 'ready'
+    ready_to_push = 'ready_to_push'
+    pushing = 'pushing'
 
 class jenga_env(gym.Env):
 
-    def __init__(self):
-        # specify logger
-        # DEBUG: Detailed information, typically of interest only when diagnosing problems.
-        # INFO: Confirmation that things are working as expected.
-        # WARNING: An indication that something unexpected happened, or indicative of some problem in
-        # the near future (e.g. ‘disk space low’). The software is still working as expected.
-        # ERROR: Due to a more serious problem, the software has not been able to perform some function.
-        # CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
-        self.log = logging.Logger(__name__)
-        # formatter = colorlog.ColoredFormatter('%(log_color)s%(asctime)s:%(levelname)s:%(funcName)s:%(message)s')
-        self.formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
-        self.stream_handler = logging.StreamHandler()
-        self.stream_handler.setFormatter(self.formatter)
-        self.stream_handler.setLevel(logging.DEBUG)
-        self.log.addHandler(self.stream_handler)
+    def __init__(self, render=True):
 
         # globals
+        self.render = render
         self.on_screen_rendering = True
         self.plot_force = False
         self.screenshot_fl = False
-        self.automatize_pusher = 0
+        self.automatize_pusher = 1
+        self.exception_occurred = False
+        self.tower_toppled = False
 
         # sensor data
         self.g_sensor_data_queue = []
@@ -62,6 +78,9 @@ class jenga_env(gym.Env):
         self.tower = None
         self.pusher = None
         self.extractor = None
+
+        # initialize state variables
+        self.total_distance = 0
 
         # create histogram plot for position errors
         self.x_errors = np.arange(g_blocks_num)
@@ -84,9 +103,9 @@ class jenga_env(gym.Env):
             plotting_thread.start()
 
         # start simulation
-        Thread(target=self.simulate).start()
-        self.sleep_simtime(0.5)
-        self.pause()
+        self.simulation_thread = Thread(target=self.simulate)
+        self.simulation_thread.start()
+        time.sleep(1)
 
     def off_screen_render_and_plot_errors(self):
         positions, im1, im2 = self.tower.get_poses_cv(range(g_blocks_num))
@@ -207,8 +226,8 @@ class jenga_env(gym.Env):
             if key.char == 'p':
                 # tower.get_tilt_2ax(tower.get_positions())
                 # tower.get_tilt_1ax(tower.get_positions())
-                self.get_camera_pose()
-                self.log.debug(f'Total z rotation: {self.tower.get_total_z_rotation(0)}')
+                log.debug(f'Layers: {self.tower.get_layers(self.tower.get_positions())}')
+                log.debug(f"Layers state: {self.tower.get_layers_state(self.tower.get_positions())}")
             if key.char == 'q':
                 self.set_screenshot_flag()
         except AttributeError:
@@ -224,38 +243,6 @@ class jenga_env(gym.Env):
             if key == keyboard.Key.right:
                 # pusher.move_pusher_in_direction('right')
                 self.extractor.move_in_direction('right')
-
-    def check_all_blocks(self):
-        self.pusher.move_to_block(0)
-        time.sleep(1)
-        loose_blocks = []
-        force_threshold = 240000
-        angle_threshold = 3
-        for i in range(g_blocks_num - 3):
-            total_displacement = 0
-            fl = 0
-
-            if i % 3 == 0:
-                force_threshold -= 10500
-
-            for j in range(45):
-                force, displacement = self.pusher.push()
-                total_displacement += displacement
-                self.log.debug(f"Total displacement: {self.tower.get_abs_displacement_2ax(i, self.tower.get_positions()) / one_millimeter}")
-                self.log.debug(f"Last displacement: {self.tower.get_last_displacement_2ax(i, self.tower.get_positions()) / one_millimeter}")
-                if force > force_threshold or self.tower.get_angle_of_highest_block_to_ground(self.tower.get_positions()) > angle_threshold:
-                    fl = 1
-                    break
-            if fl == 0:
-                loose_blocks.append(i)
-                self.log.debug(f"Loose blocks: {loose_blocks}")
-                self.log.debug(f"Highest blocks: {self.tower.get_blocks_from_highest_level(self.tower.get_positions())}")
-                self.log.debug(self.tower.get_full_layers(self.tower.get_positions()))
-                self.log.debug(self.tower.get_center_xy(self.tower.get_positions()))
-                self.extractor.extract_and_put_on_top(i)
-            self.pusher.move_pusher_to_next_block()
-            time.sleep(1)
-        print(loose_blocks)
 
     def take_screenshot(self):
         if self.on_screen_rendering:
@@ -290,6 +277,15 @@ class jenga_env(gym.Env):
         while self.t * g_timestep < current_time + t:
             time.sleep(0.05)
 
+    def simulation_running(self):
+        return not self.exception_occurred
+
+    def terminate_thread(self):
+        self.simulation_thread.join()
+
+    def isTowerToppled(self):
+        return self.tower_toppled
+
     def pause(self):
         self.pause_fl = True
 
@@ -301,17 +297,54 @@ class jenga_env(gym.Env):
         self.pusher.move_to_block(block_id)
 
     def push(self):
-        self.pusher.push()
+
+        log.debug(f"Push")
+        force, block_displacement = self.pusher.push()
+        block_positions = self.tower.get_positions()
+        tilt = self.tower.get_tilt_2ax(block_positions)
+        displacement_total = self.tower.get_abs_displacement_2ax(self.pusher.current_block, block_positions)
+        last_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions)
+        z_rotation_total = self.tower.get_total_z_rotation(self.pusher.current_block)
+        z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block)
+        status = Status.pushing
+        self.total_distance += block_displacement
+        start_time = time.time()
+        tower_state = self.tower.get_layers_state(block_positions)
+        elapsed_time = time.time() - start_time
+        log.debug(f"Layers: {tower_state}")
+
+        state = {'layers': tower_state,
+                 'force': force,
+                 'block_displacement': block_displacement,
+                 'total_block_displacement': self.total_distance,
+                 'tilt': tilt,
+                 'mean_displacement_total': displacement_total,
+                 'mean_displacement_last': last_displacement,
+                 'z_rotation_total': z_rotation_total,
+                 'z_rotation_last': z_rotation_last,
+                 'status': status
+                 }
+
+
+        log.debug(f"Push elapsed: {elapsed_time}")
+        return state
+
+    def pull_and_place(self, id):
+        self.extractor.extract_and_put_on_top(id)
 
     def simulate(self):
+        # initialize queue for timings
+        timings = collections.deque(maxlen=100)
+
         # initialize viewer
-        if self.on_screen_rendering:
-            viewer = MjViewer(self.sim)
-        else:
-            viewer = MjRenderContextOffscreen(self.sim)
+        if self.render:
+            if self.on_screen_rendering:
+                viewer = MjViewer(self.sim)
+            else:
+                viewer = MjRenderContextOffscreen(self.sim)
 
         # start with specific camera position
-        if self.on_screen_rendering:
+        if self.render and self.on_screen_rendering:
             viewer.cam.elevation = -37
             viewer.cam.azimuth = 130
             viewer.cam.lookat[0:3] = [-4.12962146, -4.90275717, 7.20812166]
@@ -319,45 +352,103 @@ class jenga_env(gym.Env):
             viewer.cam.distance = 25
 
         # initialize internal objects
-        self.tower = Tower(self.sim, viewer)
+        if self.render:
+            self.tower = Tower(self.sim, viewer)
+        else:
+            self.tower = Tower(self.sim, None)
         self.pusher = Pusher(self.sim, self.tower)
         self.extractor = Extractor(self.sim, self.tower)
 
         # simulation loop
-        while True:
-            if not self.pause:
-                self.t += 1
-                cycle_start_time = time.time()
+        try:
+            while not self.tower_toppled:
+                if not self.pause_fl:
+                    self.t += 1
 
-                # update positions of the pusher and gripper
-                self.pusher.update_position(self.t)
-                self.extractor.update_positions(self.t)
 
-                # make step
-                self.sim.step()
+                    # update positions of the pusher and gripper
+                    self.pusher.update_position(self.t)
+                    self.extractor.update_positions(self.t)
 
-                # get positions of blocks and plot images
-                if self.t % 100 == 0 and not self.on_screen_rendering:
-                    self.off_screen_render_and_plot_errors()
+                    # make step
+                    cycle_start_time = time.time()
+                    self.sim.step()
+                    cycle_elpsed_time = time.time() - cycle_start_time
+                    timings.append(cycle_elpsed_time)
 
-                # render if on screen rendering
-                if self.on_screen_rendering:
-                    viewer.render()
+                    # check if tower is toppled
+                    if self.t % 100 == 0 and self.tower.get_tilt_1ax(self.tower.get_positions()) >= 15:
+                        self.tower_toppled = True
 
-                # take a screenshot if q was pressed
-                if self.screenshot_fl:
-                    self.screenshot_fl = False
-                    self.take_screenshot()
+                    # get positions of blocks and plot images
+                    if self.t % 100 == 0 and not self.on_screen_rendering:
+                        self.off_screen_render_and_plot_errors()
 
-                # update force sensor data if enabled
-                if self.plot_force:
-                    self.update_force_sensor_plot()
+                    # render if on screen rendering
+                    if self.render and self.on_screen_rendering:
+                        viewer.render()
 
-                cycle_elpsed_time = time.time() - cycle_start_time
-                if self.t > 100 and os.getenv('TESTING') is not None:
-                    break
-            else:
-                time.sleep(0.1)
+                    # take a screenshot if q was pressed
+                    if self.screenshot_fl:
+                        self.screenshot_fl = False
+                        self.take_screenshot()
+
+                    # update force sensor data if enabled
+                    if self.plot_force:
+                        self.update_force_sensor_plot()
+
+
+                    log.debug(f"Cycle time: {np.mean(timings)*1000}ms")
+                    if self.t > 100 and os.getenv('TESTING') is not None:
+                        break
+                else:
+                    time.sleep(0.1)
+        except Exception:
+            self.exception_occurred = True
+
+def check_all_blocks(simulation):
+    simulation.move_to_block(0, 0)
+    time.sleep(1)
+    loose_blocks = []
+    force_threshold = 240000
+    angle_threshold = 3
+    simulation_over = False
+    tower_toppled = False
+    for i in range(g_blocks_num - 9):
+        total_displacement = 0
+        fl = 0
+
+        if i % 3 == 0:
+            force_threshold -= 10500
+
+        for j in range(45):
+            if (not simulation.simulation_running) or simulation.isTowerToppled():
+                simulation_over = not simulation.simulation_running()
+                tower_toppled = simulation.isTowerToppled()
+                fl = 1
+                break
+            force, displacement = simulation.pusher.push()
+            tilt = simulation.tower.get_tilt_1ax(simulation.tower.get_positions())
+            total_displacement += displacement
+            if force > force_threshold or tilt > angle_threshold:
+                fl = 1
+                break
+        if fl == 0:
+            loose_blocks.append(i)
+            simulation.pull_and_place(i)
+
+        if simulation_over:
+            log.debug(f"Simulation became unstable")
+            break
+        if tower_toppled:
+            log.debug(f"Tower toppled!")
+            break
+
+        simulation.move_to_block((i + 1) // 3, (i + 1) % 3)
+        time.sleep(1)
+    print(loose_blocks)
 
 if __name__ == "__main__":
-    simulation = jenga_env()
+        simulation = jenga_env(render=True)
+        check_all_blocks(simulation)
+        time.sleep(1)

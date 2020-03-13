@@ -206,10 +206,70 @@ class Tower:
                         if abs(positions[i][2] - positions[j][2]) < same_height_threshold:
                             layer.append(j)
                 layers.append(layer)
-                # blocks_to_test = [x for x in blocks_to_test if x not in layer]
                 blocks_to_test = (set(blocks_to_test) - set(layer))
 
+        # sort list of layers based on the height
+        layers.sort(key=lambda x: positions[x[0]][2])
+
         return layers
+
+    def mean_height(self, layer, positions):
+        heights = []
+        for id in layer:
+            heights.append(positions[id][2])
+        return np.mean(heights)
+
+    def mean_orientation(self, layer):
+        orientations = []
+        for block_id in layer:
+            orientations.append(self.get_orientation(block_id))
+        orientations = np.array(orientations)
+        mean_orientation = Quaternion(np.mean(orientations, axis=0))
+
+        return mean_orientation
+
+    def get_possible_positions(self, layer, positions):
+        mean_layer_height = self.mean_height(layer, positions)
+
+        # calculate mean orientation of the blocks on the highest full layer
+        mean_orientation = self.mean_orientation(layer)
+
+        log.debug(f"Mean orientation: {mean_orientation}")
+        log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
+
+        # calculate center of the tower
+        tower_center = self.get_center_xy(positions)
+        tower_center_with_height = np.concatenate(
+            (tower_center, np.array([mean_layer_height])))
+
+        # calculate centers for each position
+        offset_orientation = mean_orientation * Quaternion(axis=z_unit_vector, degrees=90)
+
+        print(f"Offset_orientation: {offset_orientation.yaw_pitch_roll}")
+
+        offset_vector = offset_orientation.rotate(x_unit_vector)
+        offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                     p=tower_center_with_height,
+                                                                     origin=np.array([coordinate_axes_pos_x,
+                                                                                      coordinate_axes_pos_y,
+                                                                                      coordinate_axes_pos_z]))
+        pos1 = tower_center_with_height + (block_width_max * offset_direction)
+        pos2 = tower_center_with_height
+        pos3 = tower_center_with_height - (block_width_max * offset_direction)
+        possible_positions = [pos1, pos2, pos3]
+
+        return possible_positions
+
+    def get_layers_state(self, positions):
+        layers = self.get_layers(positions)
+        layers_state = {}
+        for i in range(15):
+            possible_positions = self.get_possible_positions(layers[i], positions)
+            occupied_positions = self._assign_pos(layers[i], possible_positions, positions)
+            layers_state[i] = {0: True if 0 in occupied_positions else False,
+                               1: True if 1 in occupied_positions else False,
+                               2: True if 2 in occupied_positions else False}
+        return layers_state
 
     def get_full_layers(self, positions):
         layers = self.get_layers(positions)
@@ -560,6 +620,8 @@ class Tower:
         angle_2 = 90 - math.degrees(angle_between_vectors(tilt_vec2, y_axis_base))
         log.debug(f"Angle #1: {angle_1}")
         log.debug(f"Angle #2: {angle_2}")
+
+        return [angle_1, angle_2]
 
     def _get_displacement_2ax(self, current_block, ref_pos, positions):
         displacements = []  # a list of displacement vectors

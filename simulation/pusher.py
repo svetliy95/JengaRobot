@@ -212,6 +212,7 @@ class Pusher():
                                         self._get_quarter(target),
                                         target[2])
         for stopover in stopovers:
+            log.debug(f"Stopover")
             self.set_position(stopover)
             self._sleep_simtime(0.2)
 
@@ -296,11 +297,11 @@ class Pusher():
 
     def push(self):
         # save block position
-        block_pos_before = np.array([self.sim.data.sensordata[self.current_block * 3 + i] for i in range(3)])
+        block_pos_before = self.tower.get_position(self.current_block)
         self.move_pusher_in_direction('forward', one_millimeter)
         log.warning(f"Calculate the sleeping time right!")
         self._sleep_simtime(0.225)
-        block_pos_after = np.array([self.sim.data.sensordata[self.current_block * 3 + i] for i in range(3)])
+        block_pos_after = self.tower.get_position(self.current_block)
         current_sensor_value = -self.sim.data.sensordata[g_blocks_num * 3 + g_blocks_num * 4]
 
         displacement = np.linalg.norm(block_pos_after - block_pos_before) / one_millimeter
