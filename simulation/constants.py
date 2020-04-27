@@ -66,3 +66,8 @@ zwischenablage_quat_elem = zwischenablage_quat.q
 zwischanablage_base_size = np.array([block_width_mean / scaler, block_length_mean/2 / scaler, 0.001]) * scaler
 zwischanablage_bottom_wall_size = np.array([0.001, block_length_mean/2 / scaler, block_height_mean*0.8/scaler]) * scaler
 zwischanablage_side_wall_size = np.array([block_width_mean / scaler, 0.001, block_height_mean*0.2/scaler]) * scaler
+
+# timeouts in seconds
+timeout_push = 5
+timeout_pull = 20
+timeout_move = 10

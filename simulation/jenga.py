@@ -5,7 +5,7 @@ from generate_scene import generate_scene
 import numpy as np
 from pyquaternion import Quaternion
 import time
-from threading import Thread
+from threading import Thread, Lock
 
 # animated plot
 import pyformulas as pf
@@ -23,6 +23,13 @@ import colorlog
 from simple_pid import PID
 import gym
 import collections
+from multiprocessing import Process, Queue
+from enum import Enum, auto
+import cProfile
+from pyinstrument import Profiler
+import os
+
+profiler = Profiler()
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.
@@ -33,43 +40,116 @@ import collections
 # CRITICAL: A serious error, indicating that the program itself may be unable to continue running.
 log = logging.Logger(__name__)
 # formatter = colorlog.ColoredFormatter('%(log_color)s%(asctime)s:%(levelname)s:%(funcName)s:%(message)s')
-formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
+formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)sPID:%(process)d:%(funcName)s:%(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-file_logger = logging.Logger("file_logger")
-file_formatter = logging.Formatter('%(asctime)s:%(funcName)s:%(message)s')
-file_handler = logging.FileHandler(filename='jenga.log')
+log = logging.Logger("file_logger")
+file_formatter = logging.Formatter('%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
+file_handler = logging.FileHandler(filename='jenga.log', mode='w')
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.DEBUG)
-file_logger.addHandler(file_handler)
+log.addHandler(file_handler)
+
+class Error(Enum):
+    tower_toppled = auto()
+    exception_occurred = auto()
+    timeout = auto()
+
+class ActionType(Enum):
+    push = auto()
+    pull_and_place = auto()
+    move_to_block = auto()
+
+class Action:
+    def __init__(self, type: ActionType, lvl, pos):
+        assert type in [ActionType.push, ActionType.pull_and_place, ActionType.move_to_block], "Wrong action!"
+        assert lvl in range(15), "Wrong level index!"
+        assert pos in range(3), "Wrong position index!"
+        self.type = type
+        self.lvl = lvl
+        self.pos = pos
 
 class Status:
     ready = 'ready'
     ready_to_push = 'ready_to_push'
     pushing = 'pushing'
+    over = 'over'
+
+class State:
+    def __init__(self,
+                 tower_state,
+                 force,
+                 block_distance,
+                 total_block_distance,
+                 tilt,
+                 blocks_displacement_total,
+                 blocks_displacement_last,
+                 z_rotation_total,
+                 z_rotation_last,
+                 status
+                 ):
+        self.tower_state = tower_state
+        self.force = force
+        self.block_distance = block_distance
+        self.total_block_distance = total_block_distance
+        self.tilt = tilt
+        self.blocks_displacement_total = blocks_displacement_total
+        self.blocks_displacement_last = blocks_displacement_last
+        self.z_rotation_total = z_rotation_total
+        self.z_rotation_last = z_rotation_last
+        self.status = status
+
+    def __str__(self):
+        return f"""
+        Tower state: {str(self.tower_state)}
+        Force: {str(self.force)}
+        Block distance: {str(self.block_distance)}
+        Total block distance: {str(self.total_block_distance)}
+        Tilt: {str(self.tilt)}
+        Block displacement total: {str(self.blocks_displacement_total)}
+        Block displacement last: {str(self.blocks_displacement_last)}
+        Z rotation total: {str(self.z_rotation_total)}
+        Z rotation last: {str(self.z_rotation_last)}
+        Status: {str(self.status)}"""
 
 class jenga_env(gym.Env):
 
-    def __init__(self, render=True):
+    def __init__(self, render=True, timeout=600, seed=None):
+        self.actions_q = Queue()
+        self.state_q = Queue()
+        self.exception_q = Queue()
+        self.toppled_q = Queue()
+        self.timeout_q = Queue()
+        self.screenshot_q = Queue()
+        self.abort_q = Queue()
+        self.p = Process(target=self.process, args=(self.actions_q, render, timeout, seed), daemon=True)
+        self.p.start()
 
+    def process(self, q: Queue, render=True, timeout=600, seed=None):
+        log.debug(f"Process #{os.getpid()} started with seed: {seed}")
+        simulation_starting_time = time.time()
         # globals
         self.render = render
         self.on_screen_rendering = True
         self.plot_force = False
         self.screenshot_fl = False
         self.automatize_pusher = 1
-        self.exception_occurred = False
-        self.tower_toppled = False
+        self.tower_toppled_fl = False
+        self.simulation_aborted = False
 
         # sensor data
         self.g_sensor_data_queue = []
         self.g_sensors_data_queue_maxsize = 250
 
         # initialize simulation
-        self.model = load_model_from_xml(generate_scene(g_blocks_num, g_timestep))
+        scene_xml = generate_scene(g_blocks_num, g_timestep, seed=seed)
+        pid = os.getpid()
+        f = open(f'scene_p#{pid}.txt', mode='w')
+        f.write(scene_xml)
+        self.model = load_model_from_xml(scene_xml)
         self.sim = MjSim(self.model)
         self.pause_fl = False
         self.t = 0
@@ -99,13 +179,41 @@ class jenga_env(gym.Env):
 
         # start force data plotting
         if self.plot_force:
-            plotting_thread = Thread(target=self.plot_force_data)
+            plotting_thread = Thread(target=self.plot_force_data, daemon=True)
             plotting_thread.start()
 
         # start simulation
-        self.simulation_thread = Thread(target=self.simulate)
+        log.debug(f"Start simulation thread")
+        self.simulation_thread = Thread(target=self.simulate, daemon=True)
         self.simulation_thread.start()
-        time.sleep(1)
+
+        log.debug(f"Simulation thread started!")
+
+        # wait until pusher and extractor are initialized
+        while self.pusher is None or self.extractor is None:
+            time.sleep(0.1)
+
+        # listen for actions
+        while self.simulation_thread.is_alive():
+            if not q.empty():
+                action = q.get()
+                if action.type == ActionType.push:
+                    state = self._push()
+                    self.state_q.put(state)
+                if action.type == ActionType.pull_and_place:
+                    state = self._pull_and_place(action.lvl, action.pos)
+                    self.state_q.put(state)
+                if action.type == ActionType.move_to_block:
+                    state = self._move_to_block(action.lvl, action.pos)
+                    self.state_q.put(state)
+            if not self.abort_q.empty():
+                self.simulation_aborted = True
+            if time.time() - simulation_starting_time > timeout:
+                # abort the simulation
+                self.timeout_q.put(Error.timeout)
+                self._abort_simulation()
+
+            time.sleep(0.01)
 
     def off_screen_render_and_plot_errors(self):
         positions, im1, im2 = self.tower.get_poses_cv(range(g_blocks_num))
@@ -212,22 +320,22 @@ class jenga_env(gym.Env):
             if key.char == '9':
                 Thread(target=self.pusher.move_to_block, args=(9,)).start()
             if key.char == '+':
-                # pusher.move_pusher_in_direction('up')
-                # extractor.open_narrow()
                 self.extractor.move_in_direction('up')
             if key.char == '-':
-                # pusher.move_pusher_in_direction('down')
-                # extractor.close_narrow()
                 self.extractor.move_in_direction('down')
             if key.char == '.':
                 self.pusher.move_pusher_to_next_block()
             if key.char == ',':
                 self.pusher.move_pusher_to_previous_block()
             if key.char == 'p':
-                # tower.get_tilt_2ax(tower.get_positions())
-                # tower.get_tilt_1ax(tower.get_positions())
-                log.debug(f'Layers: {self.tower.get_layers(self.tower.get_positions())}')
-                log.debug(f"Layers state: {self.tower.get_layers_state(self.tower.get_positions())}")
+                positions = self.tower.get_positions()
+
+                start = time.time()
+                for i in range(1000):
+                    layers = self.tower.get_tilt_2ax(positions)
+                log.debug(f"Layers: {layers}")
+                elapsed = time.time() - start
+                log.debug(f"100 tilt_2ax times = {elapsed /1000 * 1000:.2f}")
             if key.char == 'q':
                 self.set_screenshot_flag()
         except AttributeError:
@@ -278,13 +386,28 @@ class jenga_env(gym.Env):
             time.sleep(0.05)
 
     def simulation_running(self):
-        return not self.exception_occurred
+        if self.tower_toppled() or self.exception_occurred() or self.timeout():
+            return False
+        else:
+            return True
 
-    def terminate_thread(self):
-        self.simulation_thread.join()
+    def tower_toppled(self):
+        if self.toppled_q.empty():
+            return False
+        else:
+            return True
 
-    def isTowerToppled(self):
-        return self.tower_toppled
+    def exception_occurred(self):
+        if self.exception_q.empty():
+            return False
+        else:
+            return True
+
+    def timeout(self):
+        if self.timeout_q.empty():
+            return False
+        else:
+            return True
 
     def pause(self):
         self.pause_fl = True
@@ -292,47 +415,163 @@ class jenga_env(gym.Env):
     def resume(self):
         self.pause_fl = False
 
-    def move_to_block(self, level, pos):
+    def move_to_block(self, lvl, pos):
+        log.debug(f"External move_to_block START!")
+        a = Action(ActionType.move_to_block, lvl, pos)
+        self.actions_q.put(a)
+        while self.simulation_running() and self.state_q.empty():
+            time.sleep(0.001)
+        if not self.state_q.empty():
+            state = self.state_q.get()
+        else:
+            state = State(None, None, None, None, None, None, None, None, None, Status.over)
+        log.debug(f"External move_to_block END!")
+        return state
+
+    def _move_to_block(self, level, pos):
+        log.debug(f"#1 Move")
         block_id = 3 * level + pos
         self.pusher.move_to_block(block_id)
-
-    def push(self):
-
-        log.debug(f"Push")
-        force, block_displacement = self.pusher.push()
+        force = 0
+        block_displacement = 0
         block_positions = self.tower.get_positions()
         tilt = self.tower.get_tilt_2ax(block_positions)
         displacement_total = self.tower.get_abs_displacement_2ax(self.pusher.current_block, block_positions)
-        last_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions)
+        last_displacement = 0
         z_rotation_total = self.tower.get_total_z_rotation(self.pusher.current_block)
-        z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block)
-        status = Status.pushing
-        self.total_distance += block_displacement
+        z_rotation_last = 0
+        status = Status.ready_to_push
+        self.total_distance = 0
         start_time = time.time()
         tower_state = self.tower.get_layers_state(block_positions)
         elapsed_time = time.time() - start_time
-        log.debug(f"Layers: {tower_state}")
+        state = State(tower_state, force, block_displacement, self.total_distance, tilt,
+                      displacement_total, last_displacement, z_rotation_total, z_rotation_last, status)
 
-        state = {'layers': tower_state,
-                 'force': force,
-                 'block_displacement': block_displacement,
-                 'total_block_displacement': self.total_distance,
-                 'tilt': tilt,
-                 'mean_displacement_total': displacement_total,
-                 'mean_displacement_last': last_displacement,
-                 'z_rotation_total': z_rotation_total,
-                 'z_rotation_last': z_rotation_last,
-                 'status': status
-                 }
+        log.debug(f"#2 Move")
 
-
-        log.debug(f"Push elapsed: {elapsed_time}")
         return state
 
-    def pull_and_place(self, id):
+    def _push(self):
+        start_time = time.time()
+
+        log.debug(f"#1 Push")
+
+        force, block_displacement = self.pusher.push()
+
+        # pause simulation
+        self.pause()
+
+        block_positions = self.tower.get_positions()
+
+        start_time_total = time.time()
+        # cProfile.run('tilt = self.tower.get_tilt_2ax(block_positions)', 'prof.prof')
+        # cProfile.runctx('tilt = self.tower.get_tilt_2ax(block_positions)', globals(), locals(), 'prof.prof')
+        start_time = time.time()
+        tilt = self.tower.get_tilt_2ax(block_positions)
+        elapsed_time = time.time() - start_time
+        # log.debug(f"Tilt time: {elapsed_time*1000:.2f}")
+
+
+        start_time = time.time()
+        displacement_total = self.tower.get_abs_displacement_2ax(self.pusher.current_block, block_positions)
+        elapsed_time = time.time() - start_time
+        # log.debug(f"Abs displacement time: {elapsed_time*1000:.2f}")
+
+        start_time = time.time()
+        last_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions)
+        elapsed_time = time.time() - start_time
+        # log.debug(f"Last displacement time: {elapsed_time*1000:.2f}")
+
+        start_time = time.time()
+        z_rotation_total = self.tower.get_total_z_rotation(self.pusher.current_block)
+        elapsed_time = time.time() - start_time
+        # log.debug(f"Total rotation time: {elapsed_time*1000:.2f}")
+
+        start_time = time.time()
+        z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block)
+        elapsed_time = time.time() - start_time
+        # log.debug(f"Last rotation time: {elapsed_time*1000:.2f}")
+
+        status = Status.pushing
+        self.total_distance += block_displacement
+
+        start = time.time()
+        tower_state = self.tower.get_layers_state(block_positions)
+        elapsed = time.time() - start
+        # log.debug(f"Layers state time: {elapsed*1000:.2f}")
+
+        elapsed_time_total = time.time() - start_time_total
+        # log.debug(f"Elapsed time total: {elapsed_time_total*1000:.2f}")
+
+
+        state = State(tower_state, force, block_displacement, self.total_distance, tilt,
+                      displacement_total, last_displacement, z_rotation_total, z_rotation_last, status)
+
+        # resume simulation
+        self.resume()
+        log.debug(f"#2 Push")
+        return state
+
+    def push(self):
+        log.debug(f"External push START!")
+        a = Action(ActionType.push, 0, 0)
+        self.actions_q.put(a)
+        while self.simulation_running() and self.state_q.empty():
+            time.sleep(0.001)
+        if not self.state_q.empty():
+            state = self.state_q.get()
+        else:
+            state = State(None, None, None, None, None, None, None, None, None, Status.over)
+        log.debug(f"External push END!")
+        return state
+
+    def pull_and_place(self, lvl, pos):
+        log.debug(f"External pull_and_place START!")
+        a = Action(ActionType.pull_and_place, lvl, pos)
+        self.actions_q.put(a)
+        while self.simulation_running() and self.state_q.empty():
+            time.sleep(0.001)
+        if not self.state_q.empty():
+            state = self.state_q.get()
+        else:
+            state = State(None, None, None, None, None, None, None, None, None, Status.over)
+        log.debug(f"External pull_and_place END!")
+        return state
+
+    def _pull_and_place(self, lvl, pos):
+        log.debug(f"#1 Pull")
+        id = 3 * lvl + pos
         self.extractor.extract_and_put_on_top(id)
+        force = 0
+        block_displacement = 0
+        block_positions = self.tower.get_positions()
+        tilt = self.tower.get_tilt_2ax(block_positions)
+        displacement_total = self.tower.get_abs_displacement_2ax(self.pusher.current_block, block_positions)
+        last_displacement = 0
+        z_rotation_total = self.tower.get_total_z_rotation(self.pusher.current_block)
+        z_rotation_last = 0
+        status = Status.ready
+        self.total_distance = 0
+        start_time = time.time()
+        tower_state = self.tower.get_layers_state(block_positions)
+        elapsed_time = time.time() - start_time
+        state = State(tower_state, force, block_displacement, self.total_distance, tilt,
+                      displacement_total, last_displacement, z_rotation_total, z_rotation_last, status)
+        log.debug(f"#2 Pull")
+        return state
+
+    def debug_move_to_zero(self):
+        self.extractor.set_position([10, 0, 1])
+
+    def abort_simulation(self):
+        self.abort_q.put(1)
+
+    def _abort_simulation(self):
+        self.simulation_aborted = True
 
     def simulate(self):
+        log.debug(f"Simulation thread running!")
         # initialize queue for timings
         timings = collections.deque(maxlen=100)
 
@@ -348,20 +587,24 @@ class jenga_env(gym.Env):
             viewer.cam.elevation = -37
             viewer.cam.azimuth = 130
             viewer.cam.lookat[0:3] = [-4.12962146, -4.90275717, 7.20812166]
-            viewer._run_speed = 1
+            viewer._run_speed = 128
             viewer.cam.distance = 25
+
+        # initializing step
+        # this is needed to initialize positions and orientations of the objects in the scene
+        self.sim.step()
 
         # initialize internal objects
         if self.render:
             self.tower = Tower(self.sim, viewer)
         else:
             self.tower = Tower(self.sim, None)
-        self.pusher = Pusher(self.sim, self.tower)
-        self.extractor = Extractor(self.sim, self.tower)
+        self.pusher = Pusher(self.sim, self.tower, self)
+        self.extractor = Extractor(self.sim, self.tower, self)
 
         # simulation loop
         try:
-            while not self.tower_toppled:
+            while not self.tower_toppled() and not self.simulation_aborted:
                 if not self.pause_fl:
                     self.t += 1
 
@@ -378,7 +621,8 @@ class jenga_env(gym.Env):
 
                     # check if tower is toppled
                     if self.t % 100 == 0 and self.tower.get_tilt_1ax(self.tower.get_positions()) >= 15:
-                        self.tower_toppled = True
+                        self.toppled_q.put(Error.tower_toppled)
+                        log.debug(f"Tower toppled!")
 
                     # get positions of blocks and plot images
                     if self.t % 100 == 0 and not self.on_screen_rendering:
@@ -398,22 +642,27 @@ class jenga_env(gym.Env):
                         self.update_force_sensor_plot()
 
 
-                    log.debug(f"Cycle time: {np.mean(timings)*1000}ms")
+                    # log.debug(f"Cycle time: {np.mean(timings)*1000}ms")
                     if self.t > 100 and os.getenv('TESTING') is not None:
                         break
                 else:
-                    time.sleep(0.1)
+                    time.sleep(0.001)
+            log.debug(f"Exit try!")
         except Exception:
-            self.exception_occurred = True
+            log.error(f"Exception occured!")
+            self.exception_q.put(Error.exception_occurred)
+        log.debug(f"Exit simulation thread!")
 
 def check_all_blocks(simulation):
+    start_time = time.time()
     simulation.move_to_block(0, 0)
     time.sleep(1)
     loose_blocks = []
     force_threshold = 240000
     angle_threshold = 3
-    simulation_over = False
+    exception_occurred = False
     tower_toppled = False
+    timeout = False
     for i in range(g_blocks_num - 9):
         total_displacement = 0
         fl = 0
@@ -422,33 +671,119 @@ def check_all_blocks(simulation):
             force_threshold -= 10500
 
         for j in range(45):
-            if (not simulation.simulation_running) or simulation.isTowerToppled():
-                simulation_over = not simulation.simulation_running()
-                tower_toppled = simulation.isTowerToppled()
+            exception_occurred = simulation.exception_occurred()
+            tower_toppled = simulation.tower_toppled()
+            timeout = simulation.timeout()
+            if exception_occurred or tower_toppled or timeout:
                 fl = 1
                 break
-            force, displacement = simulation.pusher.push()
-            tilt = simulation.tower.get_tilt_1ax(simulation.tower.get_positions())
+            state = simulation.push()
+            force = state.force
+            displacement = state.block_distance
+            tilt = np.linalg.norm(state.tilt)
             total_displacement += displacement
             if force > force_threshold or tilt > angle_threshold:
                 fl = 1
                 break
-        if fl == 0:
-            loose_blocks.append(i)
-            simulation.pull_and_place(i)
 
-        if simulation_over:
-            log.debug(f"Simulation became unstable")
-            break
         if tower_toppled:
             log.debug(f"Tower toppled!")
             break
+        if exception_occurred:
+            log.debug(f"Simulation has become unstable")
+            break
+        if timeout:
+            log.debug(f"Timeout!")
+            break
+        if fl == 0:
+            loose_blocks.append(i)
+            simulation.pull_and_place(i // 3, i % 3)
+
+        log.debug(f"Extracted blocks: {loose_blocks}")
 
         simulation.move_to_block((i + 1) // 3, (i + 1) % 3)
         time.sleep(1)
-    print(loose_blocks)
+
+    error = None
+    if tower_toppled:
+        error = Error.tower_toppled
+    if exception_occurred:
+        error = Error.exception_occurred
+    if timeout:
+        error = Error.timeout
+
+    real_elapsed_time = time.time() - start_time
+    # sim_elapsed_time = simulation.t * g_timestep
+
+    return {'extracted_blocks': loose_blocks,
+            'real_time': real_elapsed_time,
+            # 'sim_time': sim_elapsed_time,
+            'error': error,
+            }
+
+def run_one_simulation(results, render=True, timeout=600, seed=None):
+    log.debug(f"#1 Thread started!")
+    env = jenga_env(render=render, timeout=timeout, seed=seed)
+    log.debug(f"#2 Thread started!")
+    res = check_all_blocks(env)
+    log.debug(f"Check stopped!")
+    results.append(res)
+
+
 
 if __name__ == "__main__":
-        simulation = jenga_env(render=True)
-        check_all_blocks(simulation)
+
+
+    start_total_time = time.time()
+
+    N = 8
+    TOTAL = 20
+    timeout = 600  # in seconds
+    render = True
+    all_results = []
+    counter = N
+    threads = []
+    seeds = []
+    f = open('results.txt', mode='w+')
+
+    for i in range(N):
+        seed = time.time_ns()
+        t = Process(target=run_one_simulation, args=(all_results, render, timeout, seed))
+        t.start()
+        threads.append(t)
+        seeds.append(seed)
+
+    while counter < TOTAL:
+        for i in range(N):
+            if not threads[i].is_alive():
+                counter += 1
+                # create new thread
+                seed = time.time_ns()
+                t = Process(target=run_one_simulation, args=(all_results, render, timeout, seed))
+                t.start()
+                threads[i] = t
+                seeds.append(seed)
+
+                print(f"All results: {all_results}")
+                f.write(f"{all_results[-1]['error']}! Extracted blocks num: {len(all_results[-1]['extracted_blocks'])}. Extracted blocks: {all_results[-1]['extracted_blocks']} Real time: {all_results[-1]['real_time']}. Seed: {seeds[-1]}\n")
+                ######################
+
+
+                while not threads[i].is_alive():
+                    time.sleep(1)
+
         time.sleep(1)
+
+    # wait until all threads are done
+    while any(list(map(lambda x: x.is_alive(), threads))):
+        time.sleep(1)
+
+    log.debug(f"All results: ")
+    for r in all_results:
+            log.debug(f"{r['error']}! Extracted blocks num: {len(r['extracted_blocks'])}. Extracted blocks: {r['extracted_blocks']} Real time: {r['real_time']}.")
+
+    elapsed_total_time = time.time() - start_total_time
+    f.write(f"Elapsed time in total: {int(elapsed_total_time)}s")
+    log.debug(f"Elapsed time in total: {int(elapsed_total_time)}s")
+
+

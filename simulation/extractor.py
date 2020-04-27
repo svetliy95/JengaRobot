@@ -64,7 +64,7 @@ class Extractor:
     translation_tolerance = 5 * one_millimeter
     rotation_tolerance = 5  # in degrees
 
-    def __init__(self, sim, tower: Tower):
+    def __init__(self, sim, tower: Tower, env):
         self.sim = sim
         self.x = self.HOME_POS[0]
         self.y = self.HOME_POS[1]
@@ -73,6 +73,7 @@ class Extractor:
         self.tower = tower
         self.t = 0
         self.speed = 0.01  # in mm/timestep
+        self.jenga_env = env
 
     def second_order_system_step_response(self, t):
         w_n = 25
@@ -222,8 +223,6 @@ class Extractor:
 
     def _get_stopovers(self, start_quarter, end_quarter, height):
         assert start_quarter in [1, 2, 3, 4] and end_quarter in [1, 2, 3, 4]
-        log.debug(f"Start quarter: {start_quarter}.")
-        log.debug(f"End quarter: {end_quarter}.")
         distance_from_origin = block_length_mean * 3
 
         stopovers = []
@@ -343,20 +342,24 @@ class Extractor:
         self.wait_until_slow_rotation_done()
 
     def wait_until_slow_rotation_done(self):
-        while self.intermediate_rotations:  # while the list is not empty
+        while self.intermediate_rotations and \
+                self.jenga_env.simulation_running():  # while the list is not empty
             self._sleep_simtime(0.2)
 
     def wait_until_slow_translation_done(self):
-        while np.any(self.translation_to_move_slowly):
+        while np.any(self.translation_to_move_slowly) and \
+                self.jenga_env.simulation_running():
             self._sleep_simtime(0.2)
 
     def wait_until_translation_done(self):
-        while np.linalg.norm(self.get_actual_pos() - self.get_position()) > self.translation_tolerance:
+        while np.linalg.norm(self.get_actual_pos() - self.get_position()) > self.translation_tolerance and \
+                self.jenga_env.simulation_running():
             self._sleep_simtime(0.1)
 
     def wait_until_rotation_done(self):
         while math.degrees(get_angle_between_quaternions(self.get_actual_orientation(),
-                                                         self.get_orientation())) > self.rotation_tolerance:
+                                                         self.get_orientation())) > self.rotation_tolerance and \
+                self.jenga_env.simulation_running():
             self._sleep_simtime(0.1)
 
 
@@ -575,13 +578,13 @@ class Extractor:
 
     def _sleep_timesteps(self, n):
         current_timestep = self.t
-        while self.t < current_timestep + n:
+        while self.t < current_timestep + n and self.jenga_env.simulation_running():
             time.sleep(0.05)
 
 
     def _sleep_simtime(self, t):
         current_time = self.t * g_timestep
-        while self.t * g_timestep < current_time + t:
+        while self.t * g_timestep < current_time + t and self.jenga_env.simulation_running():
             time.sleep(0.05)
 
     @staticmethod

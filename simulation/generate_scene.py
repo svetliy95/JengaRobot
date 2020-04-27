@@ -5,6 +5,9 @@ from pusher import Pusher
 from tower import Tower
 from extractor import Extractor
 import math
+import scipy.stats as stats
+import time
+import os
 
 
 def generate_textures_and_materials_assets():
@@ -47,37 +50,66 @@ def generate_coordinate_axes():
     return s
 
 
-def generate_block(number, pos_sigma, angle_sigma, spacing):
+def generate_block(number, pos_sigma, angle_sigma, spacing, seed):
+    # print(f"Seed: {seed}, pid: {os.getpid()}")
     # TODO spacing automatic calculation
+
+    # fancy method to selecting the next seed
+    random_generator = np.random.Generator(np.random.PCG64(seed**23 % 10**9))
+
+
+    a = (block_height_min - block_height_mean) / block_height_sigma
+    b = (block_height_max - block_height_mean) / block_height_sigma
+    height_distribution = stats.truncnorm(a, b, loc=block_height_mean, scale=block_height_sigma)
+    height_distribution.random_state = np.random.RandomState(seed=seed)
+    # jump to the next seed
+    seed = seed**29 % 10**9
+
+
+    a = (block_width_min - block_width_mean) / block_width_sigma
+    b = (block_width_max - block_width_mean) / block_width_sigma
+    width_distribution = stats.truncnorm(a, b, loc=block_width_mean, scale=block_width_sigma)
+    width_distribution.random_state = np.random.RandomState(seed=seed)
+    # jump to next seed
+    seed = seed ** 29 % 10 ** 9
+
+    a = (block_length_min - block_length_mean) / block_length_sigma
+    b = (block_length_max - block_length_mean) / block_length_sigma
+    length_distribution = stats.truncnorm(a, b, loc=block_length_mean, scale=block_length_sigma)
+    length_distribution.random_state = np.random.RandomState(seed=seed)
+    # jump to next seed
+    seed = seed ** 29 % 10 ** 9
 
     if number % 6 < 3:  # even level
         x = 0
         y = -block_width_mean + (number % 3) * block_width_mean
         y += (number % 3) * spacing  # add spacing between blocks
-        z = number//3 * block_height_mean
-        angle_z = normal(0, angle_sigma)  # add disturbance to the angle
+        z = number // 3 * block_height_mean + block_height_mean / 2
+        angle_z = random_generator.normal(0, angle_sigma)  # add disturbance to the angle
     else:  # odd level
         x = -block_width_mean + (number % 3) * block_width_mean
         x += (number % 3) * spacing  # add spacing between blocks
         y = 0
-        z = number//3 * block_height_mean
-        angle_z = normal(90, angle_sigma)  # rotate and add disturbance
+        z = number // 3 * block_height_mean + block_height_mean / 2
+        angle_z = random_generator.normal(90, angle_sigma)  # rotate and add disturbance
 
     # add disturbance to mass, position and sizes
-    mass = normal(block_mass_mean, block_mass_sigma)
-    [x, y] = normal([x, y], [pos_sigma, pos_sigma])
-    [block_size_x, block_size_y, block_size_z] = normal([block_length_mean/2, block_width_mean/2, block_height_mean/2],
-                                                        [block_length_sigma, block_width_sigma, block_height_sigma])
+    mass = random_generator.normal(block_mass_mean, block_mass_sigma)
+    x = random_generator.normal(x, pos_sigma)
+    y = random_generator.normal(y, pos_sigma)
+    [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs() / 2, width_distribution.rvs() / 2,
+                                                  height_distribution.rvs() / 2]
 
+    # WARNING: debugging code!
+    # if number == 0:
+    #     log.warning("The size of the first block is changed!")
+    #     block_size_z = (block_height_min / 2) * 0.99
+
+    Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))
     s = f'''
-                <body name="block{number}" pos="{x} {y} {z+block_height_mean/2}" euler="0 0 {angle_z}">
-                    <joint type="slide" axis="1 0 0" pos ="0 0 0"/>
-                    <joint type="slide" axis="0 1 0" pos ="0 0 0"/>
-                    <joint type="slide" axis="0 0 1" pos ="0 0 0"/>
-                    <joint type="hinge" axis="1 0 0"  pos ="0 0 0"/>
-                    <joint type="hinge" axis="0 1 0" pos ="0 0 0"/>
-                    <joint type="hinge" axis="0 0 1"  pos ="0 0 0"/>
-                    <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box"/>
+                <body name="block{number}" pos="{x} {y} {z}" euler="0 0 {angle_z}">
+                    <freejoint name="{Tower.block_prefix + "_" + str(number) + "_joint"}"/>
+                    <geom mass="{mass}" pos="0 0 0" class="block" size="{block_size_x} {block_size_y} {block_size_z}" type="box" material="mat_block{number}"/>
                 </body>'''
     return s
 
@@ -86,12 +118,22 @@ def generate_scene(num_blocks=54,
                    timestep = 0.002,
                    pos_sigma=0.0005,
                    angle_sigma=0.2,
-                   spacing=block_width_sigma*3):
+                   spacing=block_width_sigma*3,
+                   seed=None):
 
+    print(f"Process seed: {seed}")
 
+    if seed is None:
+        seed = time.time_ns()
+
+    print(f"PID: {os.getpid()}: {seed}")
     blocks_xml = ""
     for i in range(num_blocks):
-        blocks_xml += Tower.generate_block(i, pos_sigma, angle_sigma, spacing)
+        # Choose the next seed. 19 is a prime number and
+        seed = seed ** 19 % 10 ** 9
+        blocks_xml += generate_block(i, pos_sigma, angle_sigma, spacing, seed)
+
+
 
     block_position_sensors_xml = generate_block_position_sensors(num_blocks)
     block_rotation_sensors_xml = generate_block_rotation_sensors(num_blocks)
@@ -255,7 +297,7 @@ def generate_scene(num_blocks=54,
 
 
 if __name__ == "__main__":
-    string = generate_scene()
+    string = generate_scene(timestep=g_timestep)
     print(string)
     file = open("/home/bch_svt/.mujoco/mujoco200/model/jenga.xml", "w")
     file.write(string)

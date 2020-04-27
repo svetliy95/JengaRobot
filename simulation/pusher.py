@@ -51,7 +51,7 @@ class Pusher():
 
 
 
-    def __init__(self, sim, tower: Tower):
+    def __init__(self, sim, tower: Tower, env):
         self.sim = sim
         self.tower = tower
         self.blocks_num = g_blocks_num
@@ -65,6 +65,8 @@ class Pusher():
         self.speed = 0.01  # in mm/timestep
         self.translation_to_push = np.zeros(3)  # in mm
         self.t = 0
+
+        self.jenga_env = env
 
     # returns the actual position extracted from the engine
     # offset is used to set the origin between fingers ends
@@ -119,8 +121,6 @@ class Pusher():
 
     def _get_stopovers(self, start_quarter, end_quarter, height):
         assert start_quarter in [1, 2, 3, 4] and end_quarter in [1, 2, 3, 4]
-        log.debug(f"Start quarter: {start_quarter}.")
-        log.debug(f"End quarter: {end_quarter}.")
         distance_from_origin = block_length_mean * 3
 
         stopovers = []
@@ -310,21 +310,22 @@ class Pusher():
 
     def _sleep_timesteps(self, n):
         current_timestep = self.t
-        while self.t < current_timestep + n:
+        while self.t < current_timestep + n and self.jenga_env.simulation_running():
             time.sleep(0.05)
 
 
     def _sleep_simtime(self, t):
         current_time = self.t * g_timestep
-        while self.t * g_timestep < current_time + t:
+        while self.t * g_timestep < current_time + t and self.jenga_env.simulation_running():
             time.sleep(0.01)
 
     def wait_until_translation_done(self):
-        while np.linalg.norm(self.get_actual_pos() - self.get_position()) > self.translation_tolerance:
-            log.debug(f"Translation error: {np.linalg.norm(self.get_actual_pos() - self.get_position())}")
+        while np.linalg.norm(self.get_actual_pos() - self.get_position()) > self.translation_tolerance and \
+                self.jenga_env.simulation_running():
             self._sleep_simtime(0.1)
 
     def wait_until_rotation_done(self):
         while math.degrees(get_angle_between_quaternions(self.get_actual_orientation(),
-                                                         self.get_orientation())) > self.rotation_tolerance:
+                                                         self.get_orientation())) > self.rotation_tolerance and \
+                self.jenga_env.simulation_running():
             self._sleep_simtime(0.1)

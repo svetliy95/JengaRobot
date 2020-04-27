@@ -2,6 +2,7 @@ import numpy as np
 import math
 from pyquaternion import Quaternion
 from constants import *
+import traceback
 
 
 def point_projection_on_line(line_point1, line_point2, point):

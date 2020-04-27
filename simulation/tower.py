@@ -1,7 +1,6 @@
 import numpy as np
 from constants import *
 from pyquaternion import Quaternion
-from numpy.random import normal
 from scipy.stats import truncnorm
 from cv.block_localization import get_block_positions, get_camera_params
 import cv2
@@ -11,6 +10,7 @@ import time
 import logging
 import colorlog
 import copy
+import random
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.
@@ -24,7 +24,7 @@ log = logging.Logger(__name__)
 formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
-stream_handler.setLevel(logging.DEBUG)
+stream_handler.setLevel(logging.INFO)
 log.addHandler(stream_handler)
 
 
@@ -51,16 +51,19 @@ class Tower:
         self.viewer = viewer
         positions = self.get_positions()
         orientations = self.get_orientations()
+        log.debug(f"Positions: {positions}")
+        log.debug(f"Orientations: {orientations}")
         self.ref_positions = copy.deepcopy(positions)
         self.last_ref_positions = copy.deepcopy(positions)
         self.ref_orientations = copy.deepcopy(orientations)
         self.last_ref_orientations = copy.deepcopy(orientations)
 
+
     def get_position(self, num):
         assert num < self.block_num, "Block num is to high"
         exact_pos = self.sim.data.get_body_xpos(self.block_prefix + str(num))
         if Tower.pertrubation:
-            distorted_pos = normal(exact_pos, self.pos_sigma)
+            distorted_pos = self.rg.normal(exact_pos, self.pos_sigma)
             log.debug(f"Position error: {np.linalg.norm(distorted_pos - exact_pos)/one_millimeter}")
             return distorted_pos
         else:
@@ -70,12 +73,11 @@ class Tower:
         assert num < self.block_num, "Block num is to high"
         exact_orientation = Quaternion(self.sim.data.get_body_xquat(self.block_prefix + str(num)))
 
-        q_distorted = exact_orientation * \
-                      Quaternion(axis=[1, 0, 0], degrees=normal(0, self.orientation_sigma)) * \
-                      Quaternion(axis=[0, 1, 0], degrees=normal(0, self.orientation_sigma)) * \
-                      Quaternion(axis=[0, 0, 1], degrees=normal(0, self.orientation_sigma))
-
         if Tower.pertrubation:
+            q_distorted = exact_orientation * \
+                          Quaternion(axis=[1, 0, 0], degrees=random.gauss(0, self.orientation_sigma)) * \
+                          Quaternion(axis=[0, 1, 0], degrees=random.gauss(0, self.orientation_sigma)) * \
+                          Quaternion(axis=[0, 0, 1], degrees=random.gauss(0, self.orientation_sigma))
             log.debug(f"Orientation error: {math.degrees(get_angle_between_quaternions(q_distorted, exact_orientation))}")
             return q_distorted.q
         else:
@@ -191,11 +193,26 @@ class Tower:
             if abs(positions[i][2] - root_pos[2]) < same_height_threshold:
                 adjacent_blocks.append(i)
 
-        print(f"Adjacent blocks: {adjacent_blocks}")
+        log.debug(f"Adjacent blocks: {adjacent_blocks}")
 
         return adjacent_blocks
 
     def get_layers(self, positions):
+        # sort blocks based on z-coordinate
+        positions = {k: v for k, v in sorted(positions.items(), key=lambda x: x[1][2])}
+        dict_keys = list(positions.keys())
+        layers = []
+        i = 0
+        while i < len(dict_keys):
+            layer = [dict_keys[i]]
+            while (i < len(dict_keys) - 1) and abs(positions[dict_keys[i]][2] - positions[dict_keys[i+1]][2]) < same_height_threshold:
+                layer.append(dict_keys[i+1])
+                i += 1
+            i += 1
+            layers.append(layer)
+        return layers
+
+    def get_layers_old(self, positions):
         blocks_to_test = [i for i in range(self.block_num)]
         layers = []
         for i in range(self.block_num):
@@ -234,8 +251,8 @@ class Tower:
         # calculate mean orientation of the blocks on the highest full layer
         mean_orientation = self.mean_orientation(layer)
 
-        log.debug(f"Mean orientation: {mean_orientation}")
-        log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
+        # log.debug(f"Mean orientation: {mean_orientation}")
+        # log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
 
         # calculate center of the tower
         tower_center = self.get_center_xy(positions)
@@ -245,7 +262,7 @@ class Tower:
         # calculate centers for each position
         offset_orientation = mean_orientation * Quaternion(axis=z_unit_vector, degrees=90)
 
-        print(f"Offset_orientation: {offset_orientation.yaw_pitch_roll}")
+        # print(f"Offset_orientation: {offset_orientation.yaw_pitch_roll}")
 
         offset_vector = offset_orientation.rotate(x_unit_vector)
         offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
@@ -313,19 +330,19 @@ class Tower:
 
             distances[block] = distances_for_block
 
-        log.debug(f"Possible positions: {possible_positions}")
-        log.debug(f"Distances: {distances}")
-        for i in layer:
-            log.debug(f"Position of block #{i}: {positions[i]}")
+        # log.debug(f"Possible positions: {possible_positions}")
+        # log.debug(f"Distances: {distances}")
+        # for i in layer:
+            # log.debug(f"Position of block #{i}: {positions[i]}")
 
         occupied_positions = {}
         for block in layer:
-            log.debug(f"Current block: {block}")
-            log.debug(f"Distances for current block: {distances}")
-            log.debug(f"Argmin for current block: {np.argmin(distances[block])}")
+            # log.debug(f"Current block: {block}")
+            # log.debug(f"Distances for current block: {distances}")
+            # log.debug(f"Argmin for current block: {np.argmin(distances[block])}")
             occupied_positions[np.argmin(distances[block])] = block
 
-        log.debug(f"Occupied positions: {occupied_positions}")
+        # log.debug(f"Occupied positions: {occupied_positions}")
 
         return occupied_positions
 
@@ -542,6 +559,11 @@ class Tower:
         return self.get_adjacent_blocks(self.get_lowest_block_id(positions), positions)
 
     def mean_vector(self, list_of_vectors):
+        arr = np.reshape(list_of_vectors, (len(list_of_vectors), 3))
+        mean_vector = np.mean(arr, axis=0)
+        return mean_vector
+
+    def mean_vector_old(self, list_of_vectors):
         new_list = []
         for v in list_of_vectors:
             new_list.append(np.reshape(v, (1, 3)))
@@ -588,8 +610,8 @@ class Tower:
             y.append(orientation.rotate(y_unit_vector))
         x_axis_base = self.mean_vector(x)
         y_axis_base = self.mean_vector(y)
-        log.debug(f"X base: {x_axis_base}")
-        log.debug(f"Y base: {y_axis_base}")
+        # log.debug(f"X base: {x_axis_base}")
+        # log.debug(f"Y base: {y_axis_base}")
 
         highest_layer = self.get_highest_full_layer(positions)
         x = []
@@ -602,24 +624,24 @@ class Tower:
         x_axis_layer = self.mean_vector(x)
         y_axis_layer = self.mean_vector(y)
         normal = np.cross(x_axis_layer, y_axis_layer)
-        log.debug(f"X layer: {x_axis_layer}")
-        log.debug(f"Y layer: {y_axis_layer}")
-        log.debug(f"Normal: {normal}")
+        # log.debug(f"X layer: {x_axis_layer}")
+        # log.debug(f"Y layer: {y_axis_layer}")
+        # log.debug(f"Normal: {normal}")
 
         xz_base_normal = np.cross(x_axis_base, z_unit_vector)
         yz_base_normal = np.cross(y_axis_base, z_unit_vector)
-        log.debug(f"XZ base normal: {xz_base_normal}")
-        log.debug(f"YZ base normal: {yz_base_normal}")
+        # log.debug(f"XZ base normal: {xz_base_normal}")
+        # log.debug(f"YZ base normal: {yz_base_normal}")
 
         tilt_vec1 = proj_on_plane(xz_base_normal, normal)
         tilt_vec2 = proj_on_plane(yz_base_normal, normal)
-        log.debug(f"Tilt vector 1: {tilt_vec1}")
-        log.debug(f"Tilt vector 2: {tilt_vec2}")
+        # log.debug(f"Tilt vector 1: {tilt_vec1}")
+        # log.debug(f"Tilt vector 2: {tilt_vec2}")
 
         angle_1 = 90 - math.degrees(angle_between_vectors(tilt_vec1, x_axis_base))
         angle_2 = 90 - math.degrees(angle_between_vectors(tilt_vec2, y_axis_base))
-        log.debug(f"Angle #1: {angle_1}")
-        log.debug(f"Angle #2: {angle_2}")
+        # log.debug(f"Angle #1: {angle_1}")
+        # log.debug(f"Angle #2: {angle_2}")
 
         return [angle_1, angle_2]
 
@@ -717,17 +739,18 @@ class Tower:
             y = -block_width_mean + (number % 3) * block_width_mean
             y += (number % 3) * spacing  # add spacing between blocks
             z = number // 3 * block_height_mean + block_height_mean / 2
-            angle_z = normal(0, angle_sigma)  # add disturbance to the angle
+            angle_z = self.rg.normal(0, angle_sigma)  # add disturbance to the angle
         else:  # odd level
             x = -block_width_mean + (number % 3) * block_width_mean
             x += (number % 3) * spacing  # add spacing between blocks
             y = 0
             z = number // 3 * block_height_mean + block_height_mean / 2
-            angle_z = normal(90, angle_sigma)  # rotate and add disturbance
+            angle_z = random.gauss(90, angle_sigma)  # rotate and add disturbance
 
         # add disturbance to mass, position and sizes
-        mass = normal(block_mass_mean, block_mass_sigma)
-        [x, y] = normal([x, y], [pos_sigma, pos_sigma])
+        mass = random.gauss(block_mass_mean, block_mass_sigma)
+        x = random.gauss(x, pos_sigma)
+        y = random.gauss(y, pos_sigma)
         [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs()/2, width_distribution.rvs()/2, height_distribution.rvs()/2]
 
         # WARNING: debugging code!
