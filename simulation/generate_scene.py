@@ -124,7 +124,10 @@ def generate_scene(num_blocks=54,
     print(f"Process seed: {seed}")
 
     if seed is None:
-        seed = time.time_ns()
+        initial_seed = time.time_ns()
+        seed = initial_seed
+    else:
+        initial_seed = seed
 
     print(f"PID: {os.getpid()}: {seed}")
     blocks_xml = ""
@@ -293,7 +296,7 @@ def generate_scene(num_blocks=54,
         </mujoco>
         """
 
-    return MODEL_XML
+    return MODEL_XML, initial_seed
 
 
 if __name__ == "__main__":

@@ -23,11 +23,15 @@ import colorlog
 from simple_pid import PID
 import gym
 import collections
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Pool
 from enum import Enum, auto
 import cProfile
 from pyinstrument import Profiler
 import os
+import traceback
+import glfw
+import psutil
+import sys
 
 profiler = Profiler()
 
@@ -52,6 +56,58 @@ file_handler = logging.FileHandler(filename='jenga.log', mode='w')
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.DEBUG)
 log.addHandler(file_handler)
+
+def _print_tree(parent, tree, indent=''):
+    try:
+        name = psutil.Process(parent).name()
+    except psutil.Error:
+        name = "?"
+    print(parent, name)
+    if parent not in tree:
+        return
+    children = tree[parent][:-1]
+    for child in children:
+        sys.stdout.write(indent + "|- ")
+        _print_tree(child, tree, indent + "| ")
+    child = tree[parent][-1]
+    sys.stdout.write(indent + "`_ ")
+    _print_tree(child, tree, indent + "  ")
+
+
+def print_tree():
+    # construct a dict where 'values' are all the processes
+    # having 'key' as their parent
+    tree = collections.defaultdict(list)
+    for p in psutil.process_iter():
+        try:
+            tree[p.ppid()].append(p.pid)
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            pass
+    # on systems supporting PID 0, PID 0's parent is usually 0
+    if 0 in tree and 0 in tree[0]:
+        tree[0].remove(0)
+    _print_tree(os.getpid(), tree)
+
+class SimulationResult:
+    def __init__(self, extracted_blocks, real_time, sim_time, error, seed):
+        self.extracted_blocks = extracted_blocks
+        self.blocks_number = len(extracted_blocks)
+        self.real_time = real_time
+        self.sim_time = sim_time
+        self.error = error
+        self.seed = seed
+        self.real_time_factor = sim_time / real_time
+
+    def __str__(self):
+        return f"Termination reason: {self.error}. " + \
+        f"Blocks number: {self.blocks_number}. """ + \
+        f"Elapsed time: {self.real_time}. " + \
+        f"Real-time factor: {self.real_time_factor}. " + \
+        f"Seed: {self.seed}. " + \
+        f"Extracted blocks: {self.extracted_blocks}."
+
+
+
 
 class Error(Enum):
     tower_toppled = auto()
@@ -118,17 +174,12 @@ class State:
 class jenga_env(gym.Env):
 
     def __init__(self, render=True, timeout=600, seed=None):
-        self.actions_q = Queue()
-        self.state_q = Queue()
-        self.exception_q = Queue()
-        self.toppled_q = Queue()
-        self.timeout_q = Queue()
-        self.screenshot_q = Queue()
-        self.abort_q = Queue()
-        self.p = Process(target=self.process, args=(self.actions_q, render, timeout, seed), daemon=True)
-        self.p.start()
+        self.exception_fl = False
+        self.toppled_fl = False
+        self.timeout_fl = False
+        self.screenshot_fl = False
+        self.abort_fl = False
 
-    def process(self, q: Queue, render=True, timeout=600, seed=None):
         log.debug(f"Process #{os.getpid()} started with seed: {seed}")
         simulation_starting_time = time.time()
         # globals
@@ -145,10 +196,10 @@ class jenga_env(gym.Env):
         self.g_sensors_data_queue_maxsize = 250
 
         # initialize simulation
-        scene_xml = generate_scene(g_blocks_num, g_timestep, seed=seed)
-        pid = os.getpid()
-        f = open(f'scene_p#{pid}.txt', mode='w')
-        f.write(scene_xml)
+        scene_xml, self.seed = generate_scene(g_blocks_num, g_timestep, seed=seed)
+        # pid = os.getpid()
+        # f = open(f'scene_p#{pid}.txt', mode='w')
+        # f.write(scene_xml)
         self.model = load_model_from_xml(scene_xml)
         self.sim = MjSim(self.model)
         self.pause_fl = False
@@ -192,28 +243,6 @@ class jenga_env(gym.Env):
         # wait until pusher and extractor are initialized
         while self.pusher is None or self.extractor is None:
             time.sleep(0.1)
-
-        # listen for actions
-        while self.simulation_thread.is_alive():
-            if not q.empty():
-                action = q.get()
-                if action.type == ActionType.push:
-                    state = self._push()
-                    self.state_q.put(state)
-                if action.type == ActionType.pull_and_place:
-                    state = self._pull_and_place(action.lvl, action.pos)
-                    self.state_q.put(state)
-                if action.type == ActionType.move_to_block:
-                    state = self._move_to_block(action.lvl, action.pos)
-                    self.state_q.put(state)
-            if not self.abort_q.empty():
-                self.simulation_aborted = True
-            if time.time() - simulation_starting_time > timeout:
-                # abort the simulation
-                self.timeout_q.put(Error.timeout)
-                self._abort_simulation()
-
-            time.sleep(0.01)
 
     def off_screen_render_and_plot_errors(self):
         positions, im1, im2 = self.tower.get_poses_cv(range(g_blocks_num))
@@ -392,22 +421,22 @@ class jenga_env(gym.Env):
             return True
 
     def tower_toppled(self):
-        if self.toppled_q.empty():
-            return False
-        else:
+        if self.toppled_fl:
             return True
+        else:
+            return False
 
     def exception_occurred(self):
-        if self.exception_q.empty():
-            return False
-        else:
+        if self.exception_fl:
             return True
+        else:
+            return False
 
     def timeout(self):
-        if self.timeout_q.empty():
-            return False
-        else:
+        if self.timeout_fl:
             return True
+        else:
+            return False
 
     def pause(self):
         self.pause_fl = True
@@ -415,20 +444,7 @@ class jenga_env(gym.Env):
     def resume(self):
         self.pause_fl = False
 
-    def move_to_block(self, lvl, pos):
-        log.debug(f"External move_to_block START!")
-        a = Action(ActionType.move_to_block, lvl, pos)
-        self.actions_q.put(a)
-        while self.simulation_running() and self.state_q.empty():
-            time.sleep(0.001)
-        if not self.state_q.empty():
-            state = self.state_q.get()
-        else:
-            state = State(None, None, None, None, None, None, None, None, None, Status.over)
-        log.debug(f"External move_to_block END!")
-        return state
-
-    def _move_to_block(self, level, pos):
+    def move_to_block(self, level, pos):
         log.debug(f"#1 Move")
         block_id = 3 * level + pos
         self.pusher.move_to_block(block_id)
@@ -452,7 +468,7 @@ class jenga_env(gym.Env):
 
         return state
 
-    def _push(self):
+    def push(self):
         start_time = time.time()
 
         log.debug(f"#1 Push")
@@ -513,33 +529,7 @@ class jenga_env(gym.Env):
         log.debug(f"#2 Push")
         return state
 
-    def push(self):
-        log.debug(f"External push START!")
-        a = Action(ActionType.push, 0, 0)
-        self.actions_q.put(a)
-        while self.simulation_running() and self.state_q.empty():
-            time.sleep(0.001)
-        if not self.state_q.empty():
-            state = self.state_q.get()
-        else:
-            state = State(None, None, None, None, None, None, None, None, None, Status.over)
-        log.debug(f"External push END!")
-        return state
-
     def pull_and_place(self, lvl, pos):
-        log.debug(f"External pull_and_place START!")
-        a = Action(ActionType.pull_and_place, lvl, pos)
-        self.actions_q.put(a)
-        while self.simulation_running() and self.state_q.empty():
-            time.sleep(0.001)
-        if not self.state_q.empty():
-            state = self.state_q.get()
-        else:
-            state = State(None, None, None, None, None, None, None, None, None, Status.over)
-        log.debug(f"External pull_and_place END!")
-        return state
-
-    def _pull_and_place(self, lvl, pos):
         log.debug(f"#1 Pull")
         id = 3 * lvl + pos
         self.extractor.extract_and_put_on_top(id)
@@ -565,10 +555,13 @@ class jenga_env(gym.Env):
         self.extractor.set_position([10, 0, 1])
 
     def abort_simulation(self):
-        self.abort_q.put(1)
-
-    def _abort_simulation(self):
         self.simulation_aborted = True
+
+    def get_seed(self):
+        return self.seed
+
+    def get_sim_time(self):
+        return self.t * g_timestep
 
     def simulate(self):
         log.debug(f"Simulation thread running!")
@@ -578,6 +571,7 @@ class jenga_env(gym.Env):
         # initialize viewer
         if self.render:
             if self.on_screen_rendering:
+                # viewer = MjViewer(self.sim)
                 viewer = MjViewer(self.sim)
             else:
                 viewer = MjRenderContextOffscreen(self.sim)
@@ -587,7 +581,7 @@ class jenga_env(gym.Env):
             viewer.cam.elevation = -37
             viewer.cam.azimuth = 130
             viewer.cam.lookat[0:3] = [-4.12962146, -4.90275717, 7.20812166]
-            viewer._run_speed = 128
+            viewer._run_speed = 1
             viewer.cam.distance = 25
 
         # initializing step
@@ -621,8 +615,14 @@ class jenga_env(gym.Env):
 
                     # check if tower is toppled
                     if self.t % 100 == 0 and self.tower.get_tilt_1ax(self.tower.get_positions()) >= 15:
-                        self.toppled_q.put(Error.tower_toppled)
+                        self.toppled_fl = True
                         log.debug(f"Tower toppled!")
+
+                    ##### debugging code
+                    if self.t == 200:
+                        self.toppled_fl = True
+                        log.debug(f"Simulation aborted!")
+
 
                     # get positions of blocks and plot images
                     if self.t % 100 == 0 and not self.on_screen_rendering:
@@ -650,7 +650,7 @@ class jenga_env(gym.Env):
             log.debug(f"Exit try!")
         except Exception:
             log.error(f"Exception occured!")
-            self.exception_q.put(Error.exception_occurred)
+            self.exception_fl = True
         log.debug(f"Exit simulation thread!")
 
 def check_all_blocks(simulation):
@@ -713,77 +713,74 @@ def check_all_blocks(simulation):
         error = Error.timeout
 
     real_elapsed_time = time.time() - start_time
-    # sim_elapsed_time = simulation.t * g_timestep
 
-    return {'extracted_blocks': loose_blocks,
-            'real_time': real_elapsed_time,
-            # 'sim_time': sim_elapsed_time,
-            'error': error,
-            }
+    return SimulationResult(extracted_blocks=loose_blocks,
+                            real_time=real_elapsed_time,
+                            sim_time=simulation.get_sim_time(),
+                            error=error,
+                            seed=simulation.get_seed())
 
-def run_one_simulation(results, render=True, timeout=600, seed=None):
-    log.debug(f"#1 Thread started!")
+def run_one_simulation(render=True, timeout=600, seed=None):
+    log.debug("1")
     env = jenga_env(render=render, timeout=timeout, seed=seed)
-    log.debug(f"#2 Thread started!")
-    res = check_all_blocks(env)
+    log.debug("2")
+    try:
+        log.debug("3")
+        res = check_all_blocks(env)
+        log.debug("4")
+    except Exception as e:
+        log.error(f"Exception in the algorithm occurred!")
+        traceback.print_exc()
+        res = None
     log.debug(f"Check stopped!")
-    results.append(res)
+    return res
 
 
 
 if __name__ == "__main__":
 
 
+
+    current_process = psutil.Process(os.getpid())
+
     start_total_time = time.time()
 
-    N = 8
-    TOTAL = 20
-    timeout = 600  # in seconds
+    # params
+    N = 5
+    TOTAL = 15
+    timeout = 30  # in seconds
     render = True
-    all_results = []
-    counter = N
-    threads = []
-    seeds = []
-    f = open('results.txt', mode='w+')
+    all_results = [None for i in range(TOTAL)]
+    if N == -1:
+        pool = Pool(maxtasksperchild=1)
+    else:
+        pool = Pool(N, maxtasksperchild=1)
+    f = open('final_results.txt', mode='w')
 
-    for i in range(N):
-        seed = time.time_ns()
-        t = Process(target=run_one_simulation, args=(all_results, render, timeout, seed))
-        t.start()
-        threads.append(t)
-        seeds.append(seed)
+    # start the execution using a process pool
+    for i in range(TOTAL):
+        all_results[i] = pool.apply_async(func=run_one_simulation, args=(render, timeout))
 
-    while counter < TOTAL:
-        for i in range(N):
-            if not threads[i].is_alive():
-                counter += 1
-                # create new thread
-                seed = time.time_ns()
-                t = Process(target=run_one_simulation, args=(all_results, render, timeout, seed))
-                t.start()
-                threads[i] = t
-                seeds.append(seed)
-
-                print(f"All results: {all_results}")
-                f.write(f"{all_results[-1]['error']}! Extracted blocks num: {len(all_results[-1]['extracted_blocks'])}. Extracted blocks: {all_results[-1]['extracted_blocks']} Real time: {all_results[-1]['real_time']}. Seed: {seeds[-1]}\n")
-                ######################
+    # print results while running
+    while any(list(map(lambda x: not x.ready(), all_results))):
+        log.debug(f"######## Intermediate results #########")
+        for i in range(TOTAL):
+            if all_results[i].ready():
+                res = all_results[i].get()
+                log.debug(str(res))
+        log.debug(f"#######################################")
+        time.sleep(20)
 
 
-                while not threads[i].is_alive():
-                    time.sleep(1)
+    # print final results:
+    log.debug(f"######## Final results #########")
+    for res in all_results:
+        log.debug(str(res.get()))
+        f.write(str(res.get()) + "\n")
+    log.debug(f"################################")
 
-        time.sleep(1)
-
-    # wait until all threads are done
-    while any(list(map(lambda x: x.is_alive(), threads))):
-        time.sleep(1)
-
-    log.debug(f"All results: ")
-    for r in all_results:
-            log.debug(f"{r['error']}! Extracted blocks num: {len(r['extracted_blocks'])}. Extracted blocks: {r['extracted_blocks']} Real time: {r['real_time']}.")
-
+    # calculate and print the total elapsed time
     elapsed_total_time = time.time() - start_total_time
-    f.write(f"Elapsed time in total: {int(elapsed_total_time)}s")
     log.debug(f"Elapsed time in total: {int(elapsed_total_time)}s")
 
 
