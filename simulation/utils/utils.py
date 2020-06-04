@@ -3,6 +3,7 @@ import math
 from pyquaternion import Quaternion
 from constants import *
 import traceback
+from scipy import stats
 
 
 def point_projection_on_line(line_point1, line_point2, point):
@@ -125,6 +126,9 @@ def angle_between_vectors(a, b):
 
 
 def get_angle_between_quaternions(q1, q2):
+    return max(get_angle_between_quaternions_3ax(q1, q2))
+
+def get_angle_between_quaternions_3ax(q1, q2):
     q1 = Quaternion(q1)
     q2 = Quaternion(q2)
     v1 = q1.rotate(x_unit_vector)
@@ -137,11 +141,20 @@ def get_angle_between_quaternions(q1, q2):
     v2 = q2.rotate(z_unit_vector)
     z_error = angle_between_vectors(v1, v2)
 
-    return max(x_error, y_error, z_error)
+    return np.array([x_error, y_error, z_error])
 
 def orth_proj(v, u):
     return (np.dot(u, v)/np.linalg.norm(v)**2) * v
 
 def proj_on_plane(n, v):
     return v - orth_proj(n, v)
+
+def remove_outliers(data, treshold=3):
+    data = np.array(data)
+    z_score = np.array(stats.zscore(data))
+    idx1 = treshold > z_score
+    idx2 = -treshold < z_score
+    data = data[np.logical_and(idx1, idx2)]
+
+    return data
 
