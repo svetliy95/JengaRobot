@@ -815,7 +815,7 @@ if __name__ == "__main__":
         pool = Pool(maxtasksperchild=1)
     else:
         pool = Pool(N, maxtasksperchild=1)
-    f = open('final_results.txt', mode='w')
+    f = open('final_results.log', mode='w')
 
     # start the execution using a process pool
     for i in range(TOTAL):
