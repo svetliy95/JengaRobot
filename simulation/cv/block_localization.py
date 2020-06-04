@@ -68,11 +68,11 @@ def get_camera_pose_matrix(image, tag_id, tag_size, tag_pos, camera_params):
         # return image if flag is set
 
         return camera_matrix
-    else:
+    else:  # floor tag not detected
         return None
 
 
-def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, ref_tag_size, ref_tag_pos, camera_params, return_image):
+def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, ref_tag_size, ref_tag_pos, camera_params):
     assert ref_tag_pos.size == 3, "tag_pos_ref must be a 3d vector"
 
     # get camera pose as a transformation matrix
@@ -81,6 +81,10 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
     # initialize and start detector
     detector = apriltag.Detector()
     detections, dimage = detector.detect(img, True)
+
+    # return if floor tag not detected
+    if camera_pose_matrix is None:
+        return None, dimage
 
     # detect block's tag
     block_matrices = dict()
@@ -122,10 +126,8 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
         block_matrix[:3, :3] = R
         block_matrices[tag_id] = block_matrix
 
-    if return_image:
-        return block_matrices, dimage
-    else:
-        return block_matrices
+
+    return block_matrices, dimage
 
 def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, camera_params, return_images):
     assert block_sizes.size == 3, "block_sizes must be a 3d vector"
@@ -142,8 +144,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                                 ref_tag_id=ref_tag_id,
                                                                 ref_tag_size=ref_tag_size,
                                                                 ref_tag_pos=ref_tag_pos,
-                                                                camera_params=camera_params,
-                                                              return_image=return_images)
+                                                                camera_params=camera_params)
 
     tag_pose_matrices_im2, dimage2 = get_tag_poses_from_image(img=im2,
                                                      target_tag_ids=target_tag_ids,
@@ -151,10 +152,13 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_id=ref_tag_id,
                                                      ref_tag_size=ref_tag_size,
                                                      ref_tag_pos=ref_tag_pos,
-                                                     camera_params=camera_params,
-                                                              return_image=return_images)
+                                                     camera_params=camera_params)
     
     positions = {}
+
+    # if the floor tag war not detected
+    if tag_pose_matrices_im1 is None or tag_pose_matrices_im2 is None:
+        return positions, dimage1, dimage2
     
     
     for block_id in block_ids:
