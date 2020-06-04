@@ -295,13 +295,16 @@ class Pusher():
         end_point = np.array([self.x, self.y, self.z]) + translation_direction * distance
         self.set_position(end_point)
 
+    def get_force(self):
+        return -self.sim.data.sensordata[g_blocks_num * 3 + g_blocks_num * 4]
+
     def push(self):
         # save block position
         block_pos_before = self.tower.get_position(self.current_block)
         self.move_pusher_in_direction('forward', one_millimeter)
         log.warning(f"Calculate the sleeping time right!")
         self._sleep_simtime(0.225)
-        current_sensor_value = -self.sim.data.sensordata[g_blocks_num * 3 + g_blocks_num * 4]
+        current_sensor_value = self.get_force()
         block_pos_after = self.tower.get_position(self.current_block)
 
         displacement = np.linalg.norm(block_pos_after - block_pos_before) / one_millimeter
