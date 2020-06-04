@@ -200,3 +200,8 @@ dmypy.json
 # mujoco log file
 MUJOCO_LOG.TXT
 *.log
+
+# ignore the folder with screenshots
+simulation/screenshots/
+simulation/screenshots_64sims/
+
