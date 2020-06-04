@@ -11,6 +11,7 @@ import logging
 import colorlog
 import copy
 import random
+from mujoco_py import MjRenderContextOffscreen
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.
@@ -24,7 +25,7 @@ log = logging.Logger(__name__)
 formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
-stream_handler.setLevel(logging.INFO)
+stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
 
@@ -61,10 +62,14 @@ class Tower:
 
     def get_position(self, num):
         assert num < self.block_num, "Block num is to high"
-        exact_pos = self.sim.data.get_body_xpos(self.block_prefix + str(num))
+        # copy the numpy array with the position, otherwise the value in the variable may change
+        exact_pos = copy.deepcopy(self.sim.data.get_body_xpos(self.block_prefix + str(num)))
         if Tower.pertrubation:
-            distorted_pos = self.rg.normal(exact_pos, self.pos_sigma)
-            log.debug(f"Position error: {np.linalg.norm(distorted_pos - exact_pos)/one_millimeter}")
+            start = time.time()
+            distorted_pos = random.gauss(exact_pos, self.pos_sigma)
+            elapsed = time.time() - start
+            # log.info(f"Position elapsed: {elapsed * 1000:.2f}ms")
+            # log.info(f"Position error: {np.linalg.norm(distorted_pos - exact_pos)/one_millimeter}")
             return distorted_pos
         else:
             return exact_pos
@@ -74,11 +79,14 @@ class Tower:
         exact_orientation = Quaternion(self.sim.data.get_body_xquat(self.block_prefix + str(num)))
 
         if Tower.pertrubation:
+            start = time.time()
             q_distorted = exact_orientation * \
                           Quaternion(axis=[1, 0, 0], degrees=random.gauss(0, self.orientation_sigma)) * \
                           Quaternion(axis=[0, 1, 0], degrees=random.gauss(0, self.orientation_sigma)) * \
                           Quaternion(axis=[0, 0, 1], degrees=random.gauss(0, self.orientation_sigma))
-            log.debug(f"Orientation error: {math.degrees(get_angle_between_quaternions(q_distorted, exact_orientation))}")
+            elapsed = time.time() - start
+            # log.info(f"Orinetation elapsed: {elapsed*1000:.2f}ms")
+            # log.info(f"Orientation error: {math.degrees(get_angle_between_quaternions(q_distorted, exact_orientation))}")
             return q_distorted.q
         else:
             return exact_orientation.q
@@ -86,7 +94,11 @@ class Tower:
     def _take_picture(self, cam_id):
         w = 4096
         h = 2160
-        self.viewer.render(w, h, cam_id)
+        if isinstance(self.viewer, MjRenderContextOffscreen):
+            self.viewer.render(w, h, cam_id)
+        else:  # on-screen rendering
+            # switch to fixed cam
+            self.viewer.cam.fixedcamid = cam_id
         data = np.asarray(self.viewer.read_pixels(w, h, depth=False)[::-1, :, :], dtype=np.uint8)
         data[:, :, [0, 2]] = data[:, :, [2, 0]]
         return data
@@ -99,8 +111,11 @@ class Tower:
         v2 = q2.rotate(x_unit_vector)
         return angle_between_vectors(v1, v2)
 
-    def get_poses_cv(self, ids, return_images=True):
+    def get_poses_cv(self, ids=[], return_images=True):
         assert set(ids).issubset(set(range(g_blocks_num))), "Wrong block ids!"
+        if not ids:
+            ids = [i for i in range(g_blocks_num)]
+
         im1 = self._take_picture(0)
         im2 = self._take_picture(1)
         im1_gray = cv2.cvtColor(im1, cv2.COLOR_RGB2GRAY)
@@ -144,21 +159,22 @@ class Tower:
         else:
             return None
 
-    def get_highest_block_id(self, positions):
+    def get_highest_block_id(self, positions, current_block):
         max_z = 0
         max_block_num = -1
-        for i in range(self.block_num):
-            height = positions[i][2]
-            if height > max_z:
-                max_z = height
-                max_block_num = i
+        for i in range(g_blocks_num):
+            if i != current_block:
+                height = positions[i][2]
+                if height > max_z:
+                    max_z = height
+                    max_block_num = i
 
         return max_block_num
 
     def get_lowest_block_id(self, positions):
         min_z = np.Inf
         min_block_id = -1
-        for i in range(self.block_num):
+        for i in range(g_blocks_num):
             height = positions[i][2]
             if height < min_z:
                 min_z = height
@@ -172,7 +188,7 @@ class Tower:
 
     def get_positions(self):
         positions = {}
-        for i in range(self.block_num):
+        for i in range(g_blocks_num):
             positions[i] = self.get_position(i)
 
         return positions
@@ -280,7 +296,8 @@ class Tower:
     def get_layers_state(self, positions):
         layers = self.get_layers(positions)
         layers_state = {}
-        for i in range(15):
+
+        for i in range(len(layers)):
             possible_positions = self.get_possible_positions(layers[i], positions)
             occupied_positions = self._assign_pos(layers[i], possible_positions, positions)
             layers_state[i] = {0: True if 0 in occupied_positions else False,
@@ -305,8 +322,8 @@ class Tower:
                 y.append(positions[id][1])
         return np.array([np.mean(x), np.mean(y)])
 
-    def get_highest_layer(self, positions):
-        return self.get_adjacent_blocks(self.get_highest_block_id(positions), positions)
+    def get_highest_layer(self, positions, current_block):
+        return self.get_adjacent_blocks(self.get_highest_block_id(positions, current_block), positions)
 
     def get_highest_full_layer(self, positions):
         max_z = -np.Inf
@@ -346,7 +363,7 @@ class Tower:
 
         return occupied_positions
 
-    def get_placing_pose(self, positions):
+    def get_placing_pose(self, positions, current_block):
         # There are 3 cases:
         # 1. 3 blocks in the highest layer
         # 2. 2 blocks in the highest layer
@@ -398,7 +415,7 @@ class Tower:
         possible_positions = [pos1, pos2, pos3]
 
         # get the highest (not necessary full) layer
-        highest_layer = self.get_highest_layer(positions)
+        highest_layer = self.get_highest_layer(positions, current_block)
 
         # get occupied positions
         occupied_positions = self._assign_pos(highest_layer, possible_positions, positions)
@@ -599,7 +616,7 @@ class Tower:
 
         return angle
 
-    def get_tilt_2ax(self, positions):
+    def get_tilt_2ax(self, positions, current_block):
         # calculate 2 tilt directions
         lowest_layer = self.get_lowest_layer(positions)
         x = []
@@ -613,9 +630,10 @@ class Tower:
         # log.debug(f"X base: {x_axis_base}")
         # log.debug(f"Y base: {y_axis_base}")
 
-        highest_layer = self.get_highest_full_layer(positions)
+        highest_layer = self.get_highest_layer(positions, current_block)
         x = []
         y = []
+
         for id in highest_layer:
             orientation = Quaternion(self.get_orientation(id))
             x.append(orientation.rotate(x_unit_vector))

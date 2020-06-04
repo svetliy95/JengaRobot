@@ -391,7 +391,7 @@ class Extractor:
         log.debug("Taken")
 
         # get placing position and orientation
-        pose_info = self.tower.get_placing_pose(self.tower.get_positions())
+        pose_info = self.tower.get_placing_pose(self.tower.get_positions(), current_block=id)
         pos_with_tolerance = pose_info['pos_with_tolerance']
         pos = pose_info['pos']
         block_orientation = pose_info['orientation']
