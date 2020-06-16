@@ -204,4 +204,8 @@ MUJOCO_LOG.TXT
 # ignore the folder with screenshots
 simulation/screenshots/
 simulation/screenshots_64sims/
+simulation/rl/last_screenshots/
+
+# ignore tensorboard logs from training
+simulation/some_tests/tb_log/
 
