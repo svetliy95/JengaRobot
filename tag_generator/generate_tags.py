@@ -2,8 +2,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 # globals
 n = 54
-height = 300
-width = 500
+height = 480
+width = 880
 tag_size = height
 path = "./tags/"
 
