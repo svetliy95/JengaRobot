@@ -37,7 +37,8 @@ class Extractor:
     base_mass = 0.5 * scaler ** 3
     total_mass = base_mass + 2 * finger_mass
     base_kp = total_mass * 1000
-    base_damping = 2 * total_mass * math.sqrt(base_kp / total_mass)  # critical damping
+    base_damping_slide = 2 * total_mass * math.sqrt(base_kp / total_mass)  # critical damping
+    base_damping_hinge = 2 * (2 * total_mass * math.sqrt(base_kp / total_mass))
 
     finger1_pos = 0
     finger2_pos = 0
@@ -133,15 +134,19 @@ class Extractor:
         # calculate offset
         offset = (2 * Extractor.finger_length + Extractor.size) * self.q.rotate(-x_unit_vector)
 
+
+
         # update position
         self.sim.data.ctrl[6] = self.x - self.HOME_POS[0] - offset[0]
         self.sim.data.ctrl[7] = self.y - self.HOME_POS[1] - offset[1]
         self.sim.data.ctrl[8] = self.z - self.HOME_POS[2] - offset[2]
+
         # update orientation
         yaw_pitch_roll = self.q.yaw_pitch_roll
         self.sim.data.ctrl[9] = yaw_pitch_roll[2]
         self.sim.data.ctrl[10] = yaw_pitch_roll[1]
         self.sim.data.ctrl[11] = yaw_pitch_roll[0]
+
 
         # update finger positions
         self.sim.data.ctrl[12] = self.finger1_pos
@@ -294,7 +299,18 @@ class Extractor:
     def pull(self, block_id):
         block_quat = Quaternion(self.tower.get_orientation(block_id)) * Quaternion(axis=[0, 0, 1], degrees=180)
         block_pos = np.array(self.tower.get_position(block_id))
-        block_x_face_normal_vector = np.array(block_quat.rotate(x_unit_vector))
+
+        # calculate extractor orientation
+        first_block_end = block_pos + block_quat.rotate(x_unit_vector) * block_length_mean / 2
+        second_block_end = block_pos + block_quat.rotate(-x_unit_vector) * block_length_mean / 2
+        first_distance = np.linalg.norm(coordinate_axes_pos - first_block_end)
+        second_distance = np.linalg.norm(coordinate_axes_pos - second_block_end)
+        if first_distance < second_distance:
+            offset_quat = block_quat
+        else:
+            offset_quat = block_quat * Quaternion(axis=[0, 0, 1], degrees=180)
+
+        block_x_face_normal_vector = np.array(offset_quat.rotate(x_unit_vector))
         target = np.array(block_pos + block_length_mean * block_x_face_normal_vector)
         self.translate_slowly(target - block_pos)
 
@@ -363,6 +379,54 @@ class Extractor:
             self._sleep_simtime(0.1)
 
 
+    def move_block_using_magic(self, block_id, pos, quat):
+        start_index = 7
+        l = list(pos) + list(quat)
+        self.sim.data.qpos[start_index + block_id * 7:start_index + (block_id + 1) * 7] = l
+        self.sim.data.qvel[6 + block_id * 6:6 + (block_id + 1) * 6] = [0, 0, 0, 0, 0, 0]
+
+    def extract_and_put_on_top_using_magic(self, id):
+        # extracting
+        self.move_to_block(id)
+        self.close_narrow()
+        self._sleep_simtime(0.2)
+        self.pull(id)
+        self._sleep_simtime(0.3)
+
+        # weld
+        self.weld_block_to_extractor(id)
+        self.open_wide()
+        self._sleep_simtime(0.1)
+
+        # move through stopovers (ignore the last)
+        stopovers = self._get_stopovers(
+            self._get_quarter(self.get_position()),
+            self._get_quarter(zwischanablage_pos),
+            zwischanablage_pos[2]
+        )
+        for i in range(len(stopovers) - 1):  # ignore the last stopover
+            self.set_position(stopovers[i])
+
+        # put on the zwischenablage and regrasp
+        # release welding in the following function
+        self.put_on_zwischenablage()
+        self._sleep_simtime(0.5)
+
+        #
+
+        # self.take_from_zwischenablage(id)
+        # log.debug("Taken")
+
+        # get placing position and orientation
+        pose_info = self.tower.get_placing_pose(self.tower.get_positions(), current_block=id)
+        pos_with_tolerance = pose_info['pos_with_tolerance']
+        pos = pose_info['pos']
+        block_orientation = pose_info['orientation']
+
+        # place block on top using magic
+        self.move_block_using_magic(id, pos, block_orientation)
+        self.go_home()
+
     def extract_and_put_on_top(self, id):
         # extracting
         self.move_to_block(id)
@@ -373,6 +437,8 @@ class Extractor:
 
         # weld
         self.weld_block_to_extractor(id)
+        self.open_wide()
+        self._sleep_simtime(0.1)
 
         # move through stopovers (ignore the last)
         stopovers = self._get_stopovers(
@@ -415,9 +481,9 @@ class Extractor:
 
         # move to the target position
         self.move_slowly(pos)
-        self._sleep_simtime(0.1)
+        self._sleep_simtime(0.5)
 
-        # palce
+        # place
         self.open_wide()
 
         # release welding
@@ -429,8 +495,9 @@ class Extractor:
         self._sleep_simtime(0.3)
         self.go_home()
 
-        # save new reference position
+        # save new reference position and orientation
         self.tower.ref_positions[id] = pos
+        self.tower.ref_orientations[id] = self.tower.get_orientation(id)
 
     def weld_block_to_extractor(self, id):
         # calculate quaternion q_t so that q_e * q_t = q_b
@@ -466,7 +533,7 @@ class Extractor:
         target = zwischanablage_pos + offset_vector
         self.set_position(target)
         self.unweld_block()
-        self.open_narrow()
+        # self.open_narrow()
 
 
     def take_from_zwischenablage(self, id):
@@ -515,7 +582,18 @@ class Extractor:
     def move_to_block(self, num):
         block_quat = Quaternion(self.tower.get_orientation(num)) * Quaternion(axis=[0, 0, 1], degrees=180)
         block_pos = np.array(self.tower.get_position(num))
-        block_x_face_normal_vector = np.array(block_quat.rotate(x_unit_vector))
+
+        # calculate extractor orientation
+        first_block_end = block_pos + block_quat.rotate(x_unit_vector) * block_length_mean / 2
+        second_block_end = block_pos + block_quat.rotate(-x_unit_vector) * block_length_mean / 2
+        first_distance = np.linalg.norm(coordinate_axes_pos - first_block_end)
+        second_distance = np.linalg.norm(coordinate_axes_pos - second_block_end)
+        if first_distance < second_distance:
+            offset_direction_quat = block_quat
+        else:
+            offset_direction_quat = block_quat * Quaternion(axis=[0, 0, 1], degrees=180)
+
+        block_x_face_normal_vector = np.array(offset_direction_quat.rotate(x_unit_vector))
 
         target = np.array(block_pos + (block_length_mean/2 - self.grasping_depth) * block_x_face_normal_vector)
         intermediate_target = target + (block_length_mean/2) * block_x_face_normal_vector
@@ -528,7 +606,7 @@ class Extractor:
             self.set_position(stopover)
             self._sleep_simtime(0.2)
 
-        self.set_orientation(block_quat)
+        self.set_orientation(offset_direction_quat)
         self._sleep_simtime(0.3)
         log.debug('Orientation set!')
         self.set_position(intermediate_target)
@@ -590,12 +668,13 @@ class Extractor:
     @staticmethod
     def generate_xml():
         return f'''<body name="extractor" pos="{Extractor.HOME_POS[0]} {Extractor.HOME_POS[1]} {Extractor.HOME_POS[2]}" euler="0 0 0">
-                            <joint name="extractor_slide_x" type="slide" pos="0 0 0" axis="1 0 0" damping="{Extractor.base_damping}"/>
-                            <joint name="extractor_slide_y" type="slide" pos="0 0 0" axis="0 1 0" damping="{Extractor.base_damping}"/>
-                            <joint name="extractor_slide_z" type="slide" pos="0 0 0" axis="0 0 1" damping="{Extractor.base_damping}"/>
-                            <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping}" pos ="0 0 0"/>
-                            <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping}" pos ="0 0 0"/>
-                            <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping}" pos ="0 0 0"/>
+                            <joint name="extractor_slide_x" type="slide" pos="0 0 0" axis="1 0 0" damping="{Extractor.base_damping_slide}"/>
+                            <joint name="extractor_slide_y" type="slide" pos="0 0 0" axis="0 1 0" damping="{Extractor.base_damping_slide}"/>
+                            <joint name="extractor_slide_z" type="slide" pos="0 0 0" axis="0 0 1" damping="{Extractor.base_damping_slide}"/>
+                            <joint name="extractor_hinge_x" type="hinge" axis="1 0 0" damping="{Extractor.base_damping_hinge}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_y" type="hinge" axis="0 1 0" damping="{Extractor.base_damping_hinge}" pos ="0 0 0"/>
+                            <joint name="extractor_hinge_z" type="hinge" axis="0 0 1" damping="{Extractor.base_damping_hinge}" pos ="0 0 0"/>
+
                             
                             <geom type="box" pos="0 0 0" size="{Extractor.size} {Extractor.width} {Extractor.size}" mass="{Extractor.base_mass}"/>
                             <body name="finger1" pos="{-Extractor.finger_length - Extractor.size} {-Extractor.width + Extractor.size} 0">

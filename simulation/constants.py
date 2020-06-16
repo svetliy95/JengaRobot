@@ -5,7 +5,7 @@ from pyquaternion import Quaternion
 g_timestep = 0.005
 
 # tower
-g_blocks_num = 54
+g_blocks_num = 30
 scaler = 50
 one_millimeter = 0.001 * scaler
 
@@ -13,6 +13,7 @@ one_millimeter = 0.001 * scaler
 coordinate_axes_pos_x = -0.3 * scaler
 coordinate_axes_pos_y = -0.3 * scaler
 coordinate_axes_pos_z = 0
+coordinate_axes_pos = np.array([coordinate_axes_pos_x, coordinate_axes_pos_y, coordinate_axes_pos_z])
 coordinate_axes_width = 0.005 * scaler
 coordinate_axes_height = 0.025 * scaler
 
@@ -58,6 +59,11 @@ fovy = 45
 # tower parameters
 same_height_threshold = block_height_mean/3
 origin = np.array([0, 0, 0])
+toppled_distance = 1*block_length_mean
+toppled_block_threshold = 5
+block_to_far_threshold = np.linalg.norm(block_height_mean * z_unit_vector +
+                         (block_length_mean - block_width_mean/2) * x_unit_vector +
+                         (block_width_mean) * y_unit_vector) * 2
 
 # zwischenablage
 zwischanablage_pos = np.array([-0.2, -0.3, 0.1]) * scaler
@@ -71,3 +77,14 @@ zwischanablage_side_wall_size = np.array([block_width_mean / scaler, 0.001, bloc
 timeout_push = 5
 timeout_pull = 20
 timeout_move = 10
+
+# rewards
+reward_extract = 4
+
+# rl normalization coefficients
+state_space_means = np.array([31093.59760076597, 0.7089517916864881, 14.293707360944792, -0.012084712192316339, -0.00490070252700048, -0.0345395773469817, 0.08062475922521721, -0.049612524438130065, -0.02525760238493288, 0.005152267459163039, 0.12637937423004747, 0.322, 54.051269341582])
+state_space_stds = np.array([99413.88253555144, 0.42956519713406727, 13.34898031972997, 0.09598252282445836, 0.10812004345160166, 0.3045609955626232, 0.4481523369012735, 0.10575237652977863, 0.07723860768596473, 0.06639173492656888, 0.5704620884914603, 0.4672429774753174, 39.63450085951062])
+action_mean = 0.972
+action_std = 0.16497272501841023
+reward_mean = 0.4863470043130892
+reward_std = 0.5801684522930456

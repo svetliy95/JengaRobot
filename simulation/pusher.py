@@ -43,7 +43,7 @@ class Pusher():
     pusher_base_damping = 4 * (pusher_base_mass + pusher_mass) * sqrt(pusher_base_kp / (pusher_base_mass + pusher_mass))  # critical damping
     pusher_damping = 2 * pusher_mass * sqrt(pusher_kp / pusher_mass)  # critical damping
 
-    translation_tolerance = 5 * one_millimeter
+    translation_tolerance = 10 * one_millimeter
     rotation_tolerance = 5  # in degrees
 
     is_welded = False
@@ -188,16 +188,28 @@ class Pusher():
         self.current_block = block_num
 
         # set gap between the pusher and the block
-        gap = 5 * one_millimeter
+        gap = 3 * one_millimeter
 
-        # reset last reference positions
+        # reset last reference positions and orientations
         self.tower.last_ref_positions = copy.deepcopy(self.tower.get_positions())
+        self.tower.last_ref_orientations = copy.deepcopy(self.tower.get_orientations())
 
         # get orientation of the target block as a quaternion
         block_quat = Quaternion(self.tower.get_orientation(block_num))
         block_pos = np.array(self.tower.get_position(block_num))
 
-        block_x_face_normal_vector = block_quat.rotate(x_unit_vector)
+        # calculate pusher orientation
+        first_block_end = block_pos + block_quat.rotate(x_unit_vector) * block_length_mean / 2
+        second_block_end = block_pos + block_quat.rotate(-x_unit_vector) * block_length_mean / 2
+        first_distance = np.linalg.norm(coordinate_axes_pos - first_block_end)
+        second_distance = np.linalg.norm(coordinate_axes_pos - second_block_end)
+        if first_distance > second_distance:
+            offset_quat = block_quat
+        else:
+            offset_quat = block_quat * Quaternion(axis=[0, 0, 1], degrees=180)
+
+
+        block_x_face_normal_vector = offset_quat.rotate(x_unit_vector)
         target_x = block_pos[0] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[0]
         target_y = block_pos[1] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[1]
         target_z = block_pos[2] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[2]
@@ -217,7 +229,7 @@ class Pusher():
             self._sleep_simtime(0.2)
 
         # rotate pusher towards the block
-        self.set_orientation(block_quat)
+        self.set_orientation(offset_quat)
 
         # move to intermediate target
         self.set_position(target)
@@ -225,6 +237,7 @@ class Pusher():
         # move to the end target
         target = np.array([target_x, target_y, target_z])
         self.set_position(target)
+        self._sleep_simtime(0.3)
 
     def move_pusher_to_next_block(self):
         if self.current_block < g_blocks_num - 1:

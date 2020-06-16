@@ -30,7 +30,7 @@ log.addHandler(stream_handler)
 
 
 class Tower:
-    pos = np.array([0, 0, 0])
+    pos = origin
     block_num = 54
     block_prefix = "block"
     sim = None
@@ -213,9 +213,31 @@ class Tower:
 
         return adjacent_blocks
 
+    # remove blocks that are far from the tower
+    def filter_positions(self, positions):
+        # TODO: can be implemented more efficiently
+        start = time.time()
+        blocks_within_tower = set()
+        for i in range(g_blocks_num):
+            for j in range(i + 1, g_blocks_num):
+                dist = np.linalg.norm(positions[i] - positions[j])
+                # log.debug(f"Blocks: [{i}] and [{j}], dist: {dist}, threshold: {block_to_far_threshold}")
+                if dist < block_to_far_threshold:
+                    blocks_within_tower.update([i, j])
+                    break
+        elapsed = time.time() - start
+        log.debug(f"Elapsed: {elapsed * 1000:.2f}ms")
+        log.debug(f"Ignored blocks: {set(positions.keys()) - blocks_within_tower}")
+
+        return {i: positions[i] for i in blocks_within_tower}
+
     def get_layers(self, positions):
+        # filter out blocks that are too far from the tower and therefore are not a part of the tower
+        positions = self.filter_positions(positions)
+
         # sort blocks based on z-coordinate
         positions = {k: v for k, v in sorted(positions.items(), key=lambda x: x[1][2])}
+
         dict_keys = list(positions.keys())
         layers = []
         i = 0
@@ -300,9 +322,9 @@ class Tower:
         for i in range(len(layers)):
             possible_positions = self.get_possible_positions(layers[i], positions)
             occupied_positions = self._assign_pos(layers[i], possible_positions, positions)
-            layers_state[i] = {0: True if 0 in occupied_positions else False,
-                               1: True if 1 in occupied_positions else False,
-                               2: True if 2 in occupied_positions else False}
+            layers_state[i] = {0: occupied_positions[0] if 0 in occupied_positions else None,
+                               1: occupied_positions[1] if 1 in occupied_positions else None,
+                               2: occupied_positions[2] if 2 in occupied_positions else None}
         return layers_state
 
     def get_full_layers(self, positions):
@@ -314,12 +336,14 @@ class Tower:
 
     def get_center_xy(self, positions):
         full_layers = self.get_full_layers(positions)
+        log.debug(f"Full layers: {full_layers}")
         x = []
         y = []
         for layer in full_layers:
             for id in layer:
                 x.append(positions[id][0])
                 y.append(positions[id][1])
+        log.debug(f"Tower center: {np.array([np.mean(x), np.mean(y)])}")
         return np.array([np.mean(x), np.mean(y)])
 
     def get_highest_layer(self, positions, current_block):
@@ -429,7 +453,7 @@ class Tower:
         # case 1: place the block on the side near the origin perpendicular to the last 3 blocks
         if len(highest_layer) == 3:
             # block orientation must be perpendicular to the top blocks
-            block_orientation = mean_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+            block_orientation = mean_orientation * Quaternion(axis=[0, 0, 1], degrees=-90)
 
             # calculate pos
             temp_vector = mean_orientation.rotate(x_unit_vector)
@@ -536,6 +560,7 @@ class Tower:
         log.debug(f"Occupied positions: {occupied_positions}")
         log.debug(f"Highest layer: {highest_layer}")
         log.debug(f"Highest full layer: {highest_full_layer}")
+        log.debug(f"Placing pos: {placing_pos}")
 
         return {'pos': placing_pos,
                 'pos_with_tolerance': placing_pos_with_tolerance,
@@ -586,6 +611,20 @@ class Tower:
             new_list.append(np.reshape(v, (1, 3)))
         return np.reshape(np.mean(new_list, axis=0), 3)
 
+    def toppled(self, positions, current_block):
+        counter = 0
+        for i in range(g_blocks_num):
+            if i != current_block:
+                distance_vector = positions[i][0:2] - self.pos[0:2]
+                distance = np.linalg.norm(distance_vector)
+                if distance >= toppled_distance:
+                    counter += 1
+
+        if counter > toppled_block_threshold:
+            return True
+        else:
+            return False
+
     def get_tilt_1ax(self, positions):
         # calculate 2 tilt directions
         lowest_layer = self.get_lowest_layer(positions)
@@ -600,6 +639,11 @@ class Tower:
         base_normal = np.cross(x_axis_base, y_axis_base)
 
         highest_layer = self.get_highest_full_layer(positions)
+
+        # if there is no highest full layer, then return zero
+        if highest_layer is None:
+            return 0
+
         x = []
         y = []
         for id in highest_layer:
@@ -661,7 +705,7 @@ class Tower:
         # log.debug(f"Angle #1: {angle_1}")
         # log.debug(f"Angle #2: {angle_2}")
 
-        return [angle_1, angle_2]
+        return np.array([angle_1, angle_2])
 
     def _get_displacement_2ax(self, current_block, ref_pos, positions):
         displacements = []  # a list of displacement vectors
@@ -700,7 +744,7 @@ class Tower:
         displacement_x = proj_x_sign * np.linalg.norm(proj_x)
         displacement_y = proj_y_sign * np.linalg.norm(proj_y)
 
-        return np.array([displacement_x, displacement_y])
+        return np.array([displacement_x, displacement_y]) / one_millimeter
 
     def _get_displacement_1ax(self, current_block, ref_pos, positions):
         return np.linalg.norm(self._get_displacement_2ax(current_block, ref_pos, positions))
@@ -735,6 +779,15 @@ class Tower:
 
     def get_last_z_rotation(self, current_block):
         return self._get_z_rotation(current_block, self.last_ref_orientations)
+
+    def get_block_id_from_pos(self, lvl, pos, positions):
+        layers = self.get_layers_state(positions)
+        if lvl in layers:  # if any blocks of this level exist
+            if pos in layers[lvl]:
+                return layers[lvl][pos]
+        return None
+
+
 
     @staticmethod
     def generate_block(number, pos_sigma, angle_sigma, spacing):
