@@ -204,12 +204,12 @@ class Pusher():
         first_distance = np.linalg.norm(coordinate_axes_pos - first_block_end)
         second_distance = np.linalg.norm(coordinate_axes_pos - second_block_end)
         if first_distance > second_distance:
-            offset_quat = block_quat
+            offset_direction_quat = block_quat
         else:
-            offset_quat = block_quat * Quaternion(axis=[0, 0, 1], degrees=180)
+            offset_direction_quat = block_quat * Quaternion(axis=[0, 0, 1], degrees=180)
 
 
-        block_x_face_normal_vector = offset_quat.rotate(x_unit_vector)
+        block_x_face_normal_vector = offset_direction_quat.rotate(x_unit_vector)
         target_x = block_pos[0] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[0]
         target_y = block_pos[1] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[1]
         target_z = block_pos[2] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[2]
@@ -229,7 +229,7 @@ class Pusher():
             self._sleep_simtime(0.2)
 
         # rotate pusher towards the block
-        self.set_orientation(offset_quat)
+        self.set_orientation(offset_direction_quat)
 
         # move to intermediate target
         self.set_position(target)
