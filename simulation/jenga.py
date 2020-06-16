@@ -56,12 +56,12 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-log = logging.Logger("file_logger")
-file_formatter = logging.Formatter('%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
-file_handler = logging.FileHandler(filename='jenga.log', mode='w')
-file_handler.setFormatter(file_formatter)
-file_handler.setLevel(logging.DEBUG)
-log.addHandler(file_handler)
+# log = logging.Logger("file_logger")
+# file_formatter = logging.Formatter('%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
+# file_handler = logging.FileHandler(filename='jenga.log', mode='w')
+# file_handler.setFormatter(file_formatter)
+# file_handler.setLevel(logging.DEBUG)
+# log.addHandler(file_handler)
 
 
 class SimulationResult:
@@ -671,13 +671,13 @@ class jenga_env(gym.Env):
     def step(self, action):
 
         if self.exception_occurred() and self.tower_toppled():
-            return self.last_state, self.last_reward, True, {'exception': True, 'toppled': True, 'last_screenshot': self.last_screenshot}
+            return self.last_state, self.last_reward, True, {'exception': True, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
         if self.exception_occurred():
-            return self.last_state, self.last_reward, True, {'exception': True, 'toppled': False, 'last_screenshot': self.last_screenshot}
+            return self.last_state, self.last_reward, True, {'exception': True, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
         if self.tower_toppled():
-            return self.last_state, self.last_reward, True, {'exception': False, 'toppled': True, 'last_screenshot': self.last_screenshot}
+            return self.last_state, self.last_reward, True, {'exception': False, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
         if action == 0:
 
@@ -715,7 +715,7 @@ class jenga_env(gym.Env):
                 self.extracted_blocks += 1
                 done = not res
                 reward = reward_extract
-                info = {'exception': False, 'toppled': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
+                info = {'exception': False, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
                 state = self.get_state(new_block=True)
 
                 # normalize state
@@ -764,7 +764,7 @@ class jenga_env(gym.Env):
 
                 reward = self.compute_reward(state)
                 done = False
-                info = {'exception': False, 'toppled': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
+                info = {'exception': False, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
                 # normalize state
                 # state = self.normalize_state(state)
@@ -1046,6 +1046,10 @@ class jenga_env_wrapper(gym.Env):
                 obs, reward, done, info = env.step(action_q.get())
                 state_q.put((obs, reward, done, info))
                 if info['exception'] or info['toppled']:
+                    if info['exception']:
+                        log.exception(f"Exception occurred!")
+                    if info['toppled']:
+                        log.info(f"Tower toppled!")
                     flag = False
             if not get_state_q.empty():
                 state = env.get_state(new_block=True)
@@ -1057,9 +1061,21 @@ class jenga_env_wrapper(gym.Env):
         print(f"Action # {self.action_counter}: {action}")
         self.action_counter += 1
         self.action_q.put(action)
-        res = self.state_q.get()
-        print(res)
-        return res
+        try:
+            res = self.state_q.get(timeout=timeout_step)
+            self.last_response = res
+            print(res)
+            return res
+        except:
+            # stop simulation
+            self.process_running_q.put(1)
+            log.exception("Timeout occurred!")
+            obs = self.last_response[0]
+            reward = self.last_response[1]
+            info = self.last_response[3]
+            info['timeout'] = True  # update info
+            done = True  # update done
+            return obs, reward, done, info
 
     def reset(self):
         self.process_running_q.put(1)
