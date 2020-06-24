@@ -34,7 +34,7 @@ def expert_input(obs):
 action = None
 
 # create environment
-env = jenga_env_wrapper()
+env = jenga_env_wrapper(normalize=False)
 
 # start keyboard listener
 start_keyboard_listener()

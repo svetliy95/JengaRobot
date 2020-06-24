@@ -56,18 +56,18 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-# log = logging.Logger("file_logger")
-# file_formatter = logging.Formatter('%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
-# file_handler = logging.FileHandler(filename='jenga.log', mode='w')
-# file_handler.setFormatter(file_formatter)
-# file_handler.setLevel(logging.DEBUG)
-# log.addHandler(file_handler)
+log = logging.Logger("file_logger")
+file_formatter = logging.Formatter('%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
+file_handler = logging.FileHandler(filename='jenga.log', mode='w')
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.DEBUG)
+log.addHandler(file_handler)
 
 
 class SimulationResult:
-    def __init__(self, extracted_blocks, real_time, sim_time, error, seed, screenshot):
+    def __init__(self, blocks_num, real_time, sim_time, error, seed, screenshot, extracted_blocks=[]):
         self.extracted_blocks = extracted_blocks
-        self.blocks_number = len(extracted_blocks)
+        self.blocks_number = blocks_num
         self.real_time = real_time
         self.sim_time = sim_time
         self.error = error
@@ -179,6 +179,7 @@ class jenga_env(gym.Env):
         self.render = render
         self.on_screen_rendering = True
         self.plot_force = False
+        self.key_board_listener_fl = False
         self.screenshot_fl = False
         self.tower_toppled_fl = False
         self.simulation_aborted = False
@@ -199,7 +200,6 @@ class jenga_env(gym.Env):
 
         # initialize simulation
         scene_xml, self.seed = generate_scene(g_blocks_num, g_timestep, seed=seed)
-        print(scene_xml)
         self.model = load_model_from_xml(scene_xml)
         self.sim = MjSim(self.model)
         self.pause_fl = False
@@ -216,6 +216,8 @@ class jenga_env(gym.Env):
         # initialize state variables
         self.total_distance = 0
         self.current_block_id = 0
+        self.current_lvl = 0
+        self.current_lvl_pos = 0
         self.initial_tilt_2ax = np.array([0, 0])
         self.previous_tilt_1ax = 0
         self.steps_pushed = 0
@@ -234,7 +236,8 @@ class jenga_env(gym.Env):
         # self.ax.grid(zorder=0)
 
         # start keyboard listener
-        # self.start_keyboard_listener()
+        if self.key_board_listener_fl:
+            self.start_keyboard_listener()
 
         # start plotting process
         if self.plot_force:
@@ -395,7 +398,7 @@ class jenga_env(gym.Env):
                 self.pusher.move_pusher_to_previous_block()
             if key.char == 'p':
                 # print(self.tower.get_poses_cv([3, 4, 5], False))
-                self.debug_move_to_zero()
+                self.toppled_fl = True
                 # self.move_to_random_block()
             if key.char == 'q':
                 self.set_screenshot_flag()
@@ -446,7 +449,7 @@ class jenga_env(gym.Env):
 
     def sleep_simtime(self, t):
         current_time = self.t * g_timestep
-        while self.t * g_timestep < current_time + t:
+        while self.t * g_timestep < current_time + t and self.simulation_running():
             time.sleep(0.05)
 
     def simulation_running(self):
@@ -492,19 +495,24 @@ class jenga_env(gym.Env):
             log.warning(f"There is no block on position ({lvl}, {pos}).")
 
     def push(self):
+        log.debug(f"Push #1")
         force, block_displacement = self.pusher.push()
         self.total_distance += block_displacement
+        log.debug(f"Push #2")
 
         return force, block_displacement
 
     def pull_and_place(self, lvl, pos):
+        log.debug(f"Pull and place #1")
         # set the flag, so that the tilt is not computing during placing
         self.placing_fl = True
 
         id = 3 * lvl + pos
         self.extractor.extract_and_put_on_top_using_magic(id)
+        log.debug(f"Pull and place #2")
 
     def move_to_random_block(self):
+        log.debug(f"Move to random block #1")
         # get only legal block positions (check only the blocks that are below the highest full layer)
         positions = self.tower.get_positions()
         layers = self.tower.get_layers(positions)
@@ -522,12 +530,18 @@ class jenga_env(gym.Env):
         lvl = random.choice(list(available_lvls.keys()))
         pos = random.sample(self.checked_positions[lvl], 1)[0]
 
+        # update global variables
+        self.current_lvl = lvl
+        self.current_lvl_pos = pos
+
         # remove position and lvl if it has no unchecked positions
         self.checked_positions[lvl].remove(pos)
         if not self.checked_positions[lvl]:
             del self.checked_positions[lvl]
 
         self.move_to_block(lvl, pos)
+
+        log.debug(f"Move to random block #2")
         return True
 
     def get_state(self, new_block, force=0, block_displacement=0, mode=0):
@@ -537,6 +551,8 @@ class jenga_env(gym.Env):
         """
 
         if mode == 0:
+
+            print(f"Get state#1")
 
             # pause simulation
             self.pause()
@@ -578,6 +594,27 @@ class jenga_env(gym.Env):
             # get block height
             block_height = block_positions[self.current_block_id][2] / one_millimeter
 
+            # get layer configuration
+            # 0) □□□
+            # 1) □x□
+            # 2) □□x
+            # 3) x□□
+            # 4) x□x
+            layers = self.tower.get_layers_state(block_positions)
+            current_layer = layers[self.current_lvl]
+            print(f"Current layer: {current_layer}")
+            layer_configuration = 0
+            if current_layer[0] is not None and current_layer[1] is not None and current_layer[2] is not None:
+                layer_configuration = 0
+            elif current_layer[0] is not None and current_layer[2] is not None:
+                layer_configuration = 1
+            elif current_layer[0] is not None and current_layer[1] is not None:
+                layer_configuration = 2
+            elif current_layer[1] is not None and current_layer[2] is not None:
+                layer_configuration = 3
+            elif current_layer[1] is not None:
+                layer_configuration = 4
+
             # resume simulation
             self.resume()
 
@@ -585,8 +622,8 @@ class jenga_env(gym.Env):
             state = np.array([force, block_displacement, total_block_distance, current_step_tower_displacement[0],
                              current_step_tower_displacement[1], current_round_displacement[0],
                              current_round_displacement[1], last_tilt_2ax[0], last_tilt_2ax[1], current_step_z_rot,
-                             z_rotation_last, side, block_height])
-
+                             z_rotation_last, side, block_height, self.current_lvl_pos, layer_configuration])
+            print(f"Get state#2")
             return state
 
         if mode == 1:
@@ -643,7 +680,7 @@ class jenga_env(gym.Env):
 
         return reward
 
-    def compute_reward(self, state):
+    def compute_reward(self, state, normalize):
         block_displacement = state[1]
         tilt = state[7:9]
         current_step_tower_displacement = state[3:5]
@@ -657,7 +694,8 @@ class jenga_env(gym.Env):
         reward = sum(coefficients * np.array([block_displacement, tower_displacement_1ax, tower_tilt_1ax, z_rot]))
 
         # normalize reward
-        # reward = self.normalize_reward(reward)
+        if normalize:
+            reward = self.normalize_reward(reward)
 
         return reward
 
@@ -668,8 +706,8 @@ class jenga_env(gym.Env):
         return (reward - reward_mean) / reward_std
 
     # returns observation, reward, done, info
-    def step(self, action):
-
+    def step(self, action, normalize):
+        print(f"Jenga step#1")
         if self.exception_occurred() and self.tower_toppled():
             return self.last_state, self.last_reward, True, {'exception': True, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
@@ -677,32 +715,39 @@ class jenga_env(gym.Env):
             return self.last_state, self.last_reward, True, {'exception': True, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
         if self.tower_toppled():
-            return self.last_state, self.last_reward, True, {'exception': False, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
-
+            return self.last_state, tower_toppled_reward, True, {'exception': False, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
+        print(f"Jenga step#2")
         if action == 0:
-
+            print(f"Jenga step#3")
             # reset state variables
             self.total_distance = 0
             self.steps_pushed = 0
             res = self.move_to_random_block()
             done = not res
             reward = 0
-            info = {'exception': False, 'toppled': False}
+            info = {'exception': False, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
+            print(f"Before get state!")
             state = self.get_state(new_block=True)
+            print(f"After get state!")
 
             # normalize state
-            # state = self.normalize_state(state)
+            if normalize:
+                state = self.normalize_state(state)
 
             # save the last state and reward
             self.last_state = state
             self.last_reward = reward
 
+            # wait until tower stabilizes
+            self.sleep_simtime(2)
+            print(f"Jenga step#4")
             return state, reward, done, info
 
         if action == 1:
+            print(f"Jenga step#5")
             # extract and move to the next block
             if self.steps_pushed == self.max_pushing_distance:
-
+                print(f"Jenga step#6")
                 # reset state variables
                 self.total_distance = 0
                 self.steps_pushed = 0
@@ -719,12 +764,17 @@ class jenga_env(gym.Env):
                 state = self.get_state(new_block=True)
 
                 # normalize state
-                # state = self.normalize_state(state)
+                if normalize:
+                    state = self.normalize_state(state)
 
                 # save the last state and reward
                 self.last_state = state
                 self.last_reward = reward
 
+                # wait until tower stabilizes
+                self.sleep_simtime(2)
+
+                print(f"Jenga step#7")
                 return state, reward, done, info
 
             else:  # push
@@ -750,8 +800,7 @@ class jenga_env(gym.Env):
                 # self.steps_pushed += 1
                 # return state, 0, False, info
 
-
-
+                print(f"Jenga step#8")
                 force, displacement = self.push()
                 self.steps_pushed += 1
                 state = self.get_state(new_block=False, force=force, block_displacement=displacement)
@@ -762,16 +811,19 @@ class jenga_env(gym.Env):
                 #           current_round_displacement[1], last_tilt_2ax[0], last_tilt_2ax[1], current_step_z_rot,
                 #           z_rotation_last, side, block_height])
 
-                reward = self.compute_reward(state)
+                reward = self.compute_reward(state, normalize)
                 done = False
                 info = {'exception': False, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
                 # normalize state
-                # state = self.normalize_state(state)
+                if normalize:
+                    state = self.normalize_state(state)
 
                 # save the last state and reward
                 self.last_state = state
                 self.last_reward = reward
+
+                print(f"Jenga step#9")
 
                 return state, reward, done, info
 
@@ -834,7 +886,7 @@ class jenga_env(gym.Env):
         self.viewer.cam.elevation = -37
         self.viewer.cam.azimuth = 130
         self.viewer.cam.lookat[0:3] = [-4.12962146, -4.90275717, 7.20812166]
-        self.viewer._run_speed = 1
+        self.viewer._run_speed = 16
         self.viewer.cam.distance = 25
 
         # initializing step
@@ -1020,30 +1072,37 @@ class jenga_env_wrapper(gym.Env):
     action_space = gym.spaces.Discrete(2)
     high = np.array([8.602395379871112, 1.5511497626226662, 2.127394223313028, 9.25020015965446, 13.45107554958695,
                      3.7951169685753365, 3.054330633651127, 3.649017183775844, 1.5757055313785495, 17.312344327442563,
-                     4.71880866755271, 1.451065147438874, 1.8358448244069085])
+                     4.71880866755271, 1.451065147438874, 1.8358448244069085, 2, 4])
     low = np.array(
         [-0.41973308139854426, -1.6503939248719546, -1.070771476066865, -7.326824408306893, -10.447351338602731,
          -2.9554260815691626, -3.5417146920008684, -4.731617156055343, -3.372264772803644, -6.205548486206324,
-         -1.5037625212933003, -0.6891489343293768, -1.1772412151405776])
+         -1.5037625212933003, -0.6891489343293768, -1.1772412151405776, 0, 0])
     observation_space = gym.spaces.Box(low=high, high=high)
 
-    def __init__(self):
+    def __init__(self, normalize, seed=None):
         self.action_q = Queue()
         self.state_q = Queue()
         self.process_running_q = Queue()
         self.get_state_q = Queue()
         self.process = None
         self.action_counter = 0
+        self.normalize = normalize
+        self.seed = seed
 
         # variable for the last state
         self.last_response = None
 
-    def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue):
-        env = jenga_env()
+    def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue, normalize, seed):
+
+        env = jenga_env(render=True, seed=seed)
         flag = True
         while flag and process_running_q.empty():
             if not action_q.empty():
-                obs, reward, done, info = env.step(action_q.get())
+                print("Loop #1")
+                action = action_q.get()
+                print(f"Action: {action}")
+                obs, reward, done, info = env.step(action, normalize=normalize)
+                print(f"After step!")
                 state_q.put((obs, reward, done, info))
                 if info['exception'] or info['toppled']:
                     if info['exception']:
@@ -1052,19 +1111,29 @@ class jenga_env_wrapper(gym.Env):
                         log.info(f"Tower toppled!")
                     flag = False
             if not get_state_q.empty():
+                print(f"Loop #2")
                 state = env.get_state(new_block=True)
                 state_q.put(state)
                 get_state_q.get()
             time.sleep(0.1)
 
+        if not process_running_q.empty():
+            print(f"Abort simulation from wrapper!")
+            env.abort_simulation()
+        print(f"Flag: {flag}, process_running_q.empty() == {process_running_q.empty()}")
+        print(f"action_q.empty() == {action_q.empty()}")
+        print(f"Process ends!")
+
     def step(self, action):
+        print(f'Step #1')
         print(f"Action # {self.action_counter}: {action}")
         self.action_counter += 1
         self.action_q.put(action)
         try:
             res = self.state_q.get(timeout=timeout_step)
             self.last_response = res
-            print(res)
+            # print(res)
+            print(f"Step #2")
             return res
         except:
             # stop simulation
@@ -1075,9 +1144,11 @@ class jenga_env_wrapper(gym.Env):
             info = self.last_response[3]
             info['timeout'] = True  # update info
             done = True  # update done
+            print(f"Step #3")
             return obs, reward, done, info
 
     def reset(self):
+        print(f"Reset #1")
         self.process_running_q.put(1)
         if self.process is not None:
             while self.process.is_alive():
@@ -1086,21 +1157,29 @@ class jenga_env_wrapper(gym.Env):
         self.process_running_q.get()
 
         # reset object variables
-        self.__init__()
+        self.__init__(self.normalize)
 
         self.start_new_process()
         self.get_state_q.put(1)
         state = self.state_q.get()
+        print(f"Reset #2")
         return state
 
     def close(self):
-        self.process_running_q.put(1)
-        while self.process.is_alive():
-            time.sleep(0.1)
-        self.process_running_q.get()
+        print(f"Close!")
+        if self.process.is_alive():
+            self.process_running_q.put(1)
+            print(f"Before wait")
+            while self.process.is_alive():
+                time.sleep(0.1)
+            print(f"After wait")
+            self.process_running_q.get(timeout=timeout_step)
+            print(f"After process stopping")
+        print(f"Closed!")
+
 
     def start_new_process(self):
-        self.process = Process(target=self.env_process, args=(self.action_q, self.state_q, self.process_running_q, self.get_state_q))
+        self.process = Process(target=self.env_process, args=(self.action_q, self.state_q, self.process_running_q, self.get_state_q, self.normalize, self.seed))
         self.process.start()
 
 
