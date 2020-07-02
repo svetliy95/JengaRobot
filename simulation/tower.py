@@ -2,7 +2,7 @@ import numpy as np
 from constants import *
 from pyquaternion import Quaternion
 from scipy.stats import truncnorm
-from cv.block_localization import get_block_positions, get_camera_params
+from cv.block_localization import get_block_positions_mujoco, get_camera_params_mujoco
 import cv2
 import math
 from utils.utils import *
@@ -123,16 +123,16 @@ class Tower:
         im2_gray = cv2.cvtColor(im2, cv2.COLOR_RGB2GRAY)
         height, width = im1_gray.shape
 
-        poses, dimage1, dimage2 = get_block_positions(im1=im1_gray,
-                                        im2=im2_gray,
-                                        block_ids=ids,
-                                        target_tag_size=block_height_mean * 0.8,  # 0.8 because the actual tag length is 8/10 of the whole length
-                                        ref_tag_size=coordinate_frame_tag_size[0] * 0.8,  # 0.8 because the actual tag length is 8/10 of the whole length
-                                        ref_tag_pos=coordinate_frame_tag_pos,
-                                        ref_tag_id=coordinate_frame_tag_id,
-                                        block_sizes=np.array([block_length_mean, block_width_mean, block_height_mean]),
-                                        camera_params=get_camera_params(height, width, fovy),
-                                        return_images=return_images)
+        poses, dimage1, dimage2 = get_block_positions_mujoco(im1=im1_gray,
+                                                             im2=im2_gray,
+                                                             block_ids=ids,
+                                                             target_tag_size=block_height_mean * 0.8,  # 0.8 because the actual tag length is 8/10 of the whole length
+                                                             ref_tag_size=coordinate_frame_tag_size[0] * 0.8,  # 0.8 because the actual tag length is 8/10 of the whole length
+                                                             ref_tag_pos=coordinate_frame_tag_pos,
+                                                             ref_tag_id=coordinate_frame_tag_id,
+                                                             block_sizes=np.array([block_length_mean, block_width_mean, block_height_mean]),
+                                                             camera_params=get_camera_params_mujoco(height, width, fovy),
+                                                             return_images=return_images)
 
         # calculate errors
         for i in poses:

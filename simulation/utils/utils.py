@@ -158,3 +158,20 @@ def remove_outliers(data, treshold=3):
 
     return data
 
+
+def translation_along_axis_towards_point(src_point, dst_point, axis, quat):
+    translation_line = quat.rotate(axis) / np.linalg.norm(axis)  # rotate and normalize
+    projection = point_projection_on_line(src_point, src_point + translation_line, dst_point)
+
+    # calculate direction
+    direction1 = translation_line
+    direction2 = -translation_line
+    dist1 = np.linalg.norm(src_point + direction1 - dst_point)
+    dist2 = np.linalg.norm(src_point + direction2 - dst_point)
+
+    if dist1 < dist2:
+        return np.linalg.norm(projection - src_point)
+    else:
+        return -np.linalg.norm(projection - src_point)
+
+

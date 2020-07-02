@@ -420,8 +420,8 @@ class jenga_env(gym.Env):
         if self.on_screen_rendering:
             data = np.asarray(self.viewer.read_pixels(1920 - 66, 1080 - 55, depth=False)[::-1, :, :], dtype=np.uint8)
             data[:, :, [0, 2]] = data[:, :, [2, 0]]
-            return data
-            # cv2.imwrite('./screenshots/screenshot.png', data)
+            # return data
+            cv2.imwrite('./screenshots/screenshot.png', data)
         else:
             # render camera #1
 

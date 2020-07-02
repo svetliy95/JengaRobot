@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw, ImageFont
 import sys
+import cv2
 
 
 def generate_texture_with_tag(block_num, side, path):
@@ -7,7 +8,8 @@ def generate_texture_with_tag(block_num, side, path):
 
     tag_size = 300
     width = 300
-    height = 500
+    print(f"WARNING: Check the ratio!")
+    height = 550
     rotation = None
     letter = None
 
@@ -31,10 +33,14 @@ def generate_texture_with_tag(block_num, side, path):
     # create empty image with the white background
     res = Image.new('RGB', (width, height), (255, 255, 255))
 
+    print(f"Letter changed!")
+    letter = str(block_num)
+
     # add letter to the texture
     d = ImageDraw.Draw(res)
     fnt = ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
-    d.text((50, 50), letter, direction="upwards", font=fnt, stroke_width=2, fill=(0, 0, 0, 255))
+    # d.text((50, 50), letter, direction="upwards", font=fnt, stroke_width=2, fill=(0, 0, 0, 255))
+    d.text((50, 50), letter, font=fnt, stroke_width=2, fill=(0, 0, 0, 255))
 
     # paste the tag in the center of the image
     res.paste(tag_img, ((width - tag_w) // 2, (height - tag_h) // 2))
@@ -45,31 +51,35 @@ def generate_texture_with_tag(block_num, side, path):
     res = res.resize((max(height, width), max(height, width)), Image.NONE)
 
     if path != None:
-        # res.save(path + f"texture_block{block_num}_{side}.png")
+        res.save(path + f"texture_block{block_num}_{side}_shield.png")
         res.show()
     return res
 
 def generate_texture_for_coordinate_frame():
-    tag_id = 257
+    tag_id = 224
     tag_name = "tag36_11_" + str(tag_id).zfill(5) + ".png"
     tag_img = Image.open('../../resources/tag36h11/' + tag_name)
     tag_img = tag_img.resize((1000, 1000))
-    tag_img.save("../images/coordinate_frame_texture3.png")
+    tag_img.save("../images/cali_tag.png")
 
 def generate_square_texture():
-    tag_id = 300
+    tag_id = 224
     tag_name = "tag36_11_" + str(tag_id).zfill(5) + ".png"
     tag_img = Image.open('../../resources/tag36h11/' + tag_name)
     # rotate tag
     tag_img = tag_img.rotate(90)
     tag_img = tag_img.resize((1000, 1000))
-    tag_img.save("../images/floating_object_texture.png")
+    tag_img.save("../images/cali_tag.png")
 
 
 if __name__ == "__main__":
-     for i in range(1):
-         # generate_texture_with_tag(i, 'left', "../images/")
-         generate_texture_with_tag(i, 'right', "../images/")
+     # for i in range(1):
+     #     # generate_texture_with_tag(i, 'left', "../images/")
+     #     generate_texture_with_tag(i, 'right', "../images/")
+
+    for i in range(54):
+        generate_texture_with_tag(i, 'right', "../cv/textures/")
+        generate_texture_with_tag(i, 'left', "../cv/textures/")
 
     # generate_texture_for_coordinate_frame()
     # generate_square_texture()
