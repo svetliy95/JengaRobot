@@ -32,14 +32,26 @@ def generate_block_xml(id, size, cali: bool):
         res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
                 <geom name="block_{str(id)}" pos="0 0 0" size="{block_x_size} {block_y_size} {block_z_size}" type="box" rgba="0.8235 0.651 0.4745 1"/>
                 <geom name="shield_left_{str(id)}" pos="{-(block_x_size + shield_thickness/2)} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box"/>
-                <geom name="shield_right_{str(id)}" pos="{block_x_size + shield_thickness/2} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box"/>
+                <geom name="shield_right_{str(id)}" pos="{block_x_size + shield_thickness/2} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box" material="mat_shield"/>
             </body>\n"""
     else:
-        res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
-                        <geom name="block_{str(id)}" pos="0 0 0" size="{block_z_size} {block_y_size} {block_x_size}" type="box" rgba="0.8235 0.651 0.4745 1"/>
-                        <geom name="shield_left_{str(id)}" pos="0 0 {-(block_x_size + shield_thickness / 2)}" size="{shield_z_size} {shield_y_size} {shield_x_size}" type="box"/>
-                        <geom name="shield_right_{str(id)}" pos="0 0 {block_x_size + shield_thickness / 2}" size="{shield_z_size} {shield_y_size}  {shield_x_size}" type="box"/>
-                    </body>\n"""
+        if id < 54:
+            res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+                            <geom name="block_{str(id)}" pos="0 0 0" size="{block_z_size} {block_y_size} {block_x_size}" type="box" rgba="0.8235 0.651 0.4745 1"/>
+                            <geom name="shield_left_{str(id)}" pos="0 0 {-(block_x_size + shield_thickness / 2)}" size="{shield_z_size} {shield_y_size} {shield_x_size}" type="box" rgba="0 0 1 1" material="mat_shield_back"/>
+                            <geom name="shield_right_{str(id)}" pos="0 0 {block_x_size + shield_thickness / 2}" size="{shield_z_size} {shield_y_size}  {shield_x_size}" type="box" rgba="0 1 0.4745 1" material="mat_shield_front"/>
+                        </body>\n"""
+            res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+                            <geom name="block_{str(id)}" pos="0 0 0" size="{block_x_size} {block_y_size} {block_z_size}" type="box" rgba="0.8235 0.651 0.4745 1" material="mat_block_top"/>
+                            <geom name="shield_left_{str(id)}" pos="{-(block_x_size + shield_thickness / 2)} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box" material="mat_shield_back"/>
+                            <geom name="shield_right_{str(id)}" pos="{block_x_size + shield_thickness / 2} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box" material="mat_shield_front"/>
+                        </body>\n"""
+        else:
+            res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+                                        <geom name="block_{str(id)}" pos="0 0 0" size="{block_z_size} {block_y_size} {block_x_size}" type="box" rgba="0.75 0.651 0.6 1"/>
+                                        <geom name="shield_left_{str(id)}" pos="0 0 {-(block_x_size + shield_thickness / 2)}" size="{shield_z_size} {shield_y_size} {shield_x_size}" type="box" rgba="0 0 1 1" material="mat_shield_back"/>
+                                        <geom name="shield_right_{str(id)}" pos="0 0 {block_x_size + shield_thickness / 2}" size="{shield_z_size} {shield_y_size}  {shield_x_size}" type="box" rgba="0 1 0.4745 1" material="mat_shield_front"/>
+                                    </body>\n"""
 
     return res
 
@@ -89,6 +101,10 @@ def generate_scene_with_cali(scaler, cali_pos, shield_pose, cali_fl: bool):
                     <geom name="z_axis" rgba="0 0 1 1" pos="0 0 {coordinate_axes_height + 2 * coordinate_axes_width}" type="box" size="{coordinate_axes_width} {coordinate_axes_width} {coordinate_axes_height}"/>
                 </body>"""
 
+    floor_tag = f"""<body name="floor_tag" pos="{0} {0} {0}">
+                    <geom name="floor_tag" pos="0 0 {1*scaler}" size="{50/8*10/2*scaler} {50/8*10/2*scaler} {1*scaler}" type="box" material="mat_floor_tag"/>
+                </body>"""
+
     cali = ""
     if cali_fl:
         cali = f'''<body name="cali" pos="{cali_pos[0]} {cali_pos[1]} {cali_pos[2]}" euler="0 0 0">
@@ -127,7 +143,15 @@ def generate_scene_with_cali(scaler, cali_pos, shield_pose, cali_fl: bool):
             <map stiffness="700" shadowscale="0.5" fogstart="10" fogend="15" zfar="40" haze="0.3"/>
         </visual>
         
-        <asset>            
+        <asset>
+            <texture name="tex_floor_tag" type="cube" filefront="/home/bch_svt/cartpole/simulation/cv/textures/floor_tag.png"/>
+            <material name="mat_floor_tag" texture="tex_floor_tag"/>
+            <texture name="tex_shield_front" type="cube" fileright="/home/bch_svt/cartpole/simulation/cv/textures/shield_right.png"/>
+            <material name="mat_shield_front" texture="tex_shield_front"/>
+            <texture name="tex_shield_back" type="cube" fileleft="/home/bch_svt/cartpole/simulation/cv/textures/shield_left.png"/>
+            <material name="mat_shield_back" texture="tex_shield_back"/>
+            <texture name="tex_block_top" type="cube" fileup="/home/bch_svt/cartpole/simulation/cv/textures/top.png"/>
+            <material name="mat_block_top" texture="tex_block_top"/>
             <texture name="tex_cali" type="cube" fileright="/home/bch_svt/cartpole/simulation/images/cali_tag.png"/>
             <material name="mat_cali" texture="tex_cali"/>
             <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
@@ -143,7 +167,7 @@ def generate_scene_with_cali(scaler, cali_pos, shield_pose, cali_fl: bool):
             <!-- floor -->
             <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="1"/>
             
-            
+            {floor_tag}
             
             {coord_ax}
             
@@ -192,13 +216,15 @@ def get_shild_pose(tag_id, cam, detector, corrections):
 
         return shield_pos, shield_quat
 
-def set_block_poses(cam, detector, block_sizes):
-    cam_params = cam.get_params()
-    im = cam.take_picture()
-    blank_image = np.zeros((im.shape[0], im.shape[1]), np.uint8)
+def set_block_poses(cam1, cam2, detector, block_sizes):
+    cam_params1 = cam1.get_params()
+    cam_params2 = cam2.get_params()
+    im1 = cam1.take_picture()
+    im2 = cam2.take_picture()
+    blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
     block_ids = [i for i in range(54)]
-    poses = get_block_positions(im, blank_image, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
-                        cam_params, False, detector)
+    poses = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
+                        cam_params1, cam_params2, False, detector)
 
     print(poses)
 
@@ -217,6 +243,54 @@ def set_block_poses(cam, detector, block_sizes):
 
                 sim.data.set_mocap_pos(f'block_{id}', block_pos)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
+
+def set_block_poses_debug(cam1, cam2, detector, block_sizes):
+    cam_params1 = cam1.get_params()
+    cam_params2 = cam2.get_params()
+    im1 = cam1.take_picture()
+    im2 = cam2.take_picture()
+    blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
+    block_ids = [i for i in range(54)]
+    poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
+                        cam_params1, cam_params2, False, detector)
+    poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
+                                block_sizes, corrections,
+                                cam_params1, cam_params2, False, detector)
+
+    tag_height = np.array([0, 0, 2]) * scaler
+    if poses1 is not None:
+        for id in range(54):
+            if id in poses1:
+                block_pos = poses1[id]['pos']
+                block_quat = poses1[id]['orientation']
+
+                if calibration_mode:
+                    block_pos, block_quat = swap_coordinates_cali(block_pos, block_quat)
+                else:
+                    block_pos, block_quat = swap_coordinates_normal(block_pos, block_quat)
+
+
+                block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
+                print(f"Block#{id} quat: {block_quat}")
+
+                sim.data.set_mocap_pos(f'block_{id}', block_pos + tag_height)
+                sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
+
+    # if poses2 is not None:
+    #     for id in range(54):
+    #         if id in poses2:
+    #             block_pos = poses2[id]['pos']
+    #             block_quat = poses2[id]['orientation']
+    #
+    #             if calibration_mode:
+    #                 block_pos, block_quat = swap_coordinates_cali(block_pos, block_quat)
+    #             else:
+    #                 block_pos, block_quat = swap_coordinates_normal(block_pos, block_quat)
+    #
+    #             # print(block_quat)
+    #
+    #             sim.data.set_mocap_pos(f'block_{54+id}', block_pos + + tag_height)
+    #             sim.data.set_mocap_quat(f'block_{54+id}', block_quat.q)
 
 def get_shild_pose_mujoco(tag_id, im, detector):
     height, width = im.shape
@@ -243,7 +317,7 @@ def get_shild_pose_mujoco(tag_id, im, detector):
 def update_shild_pos():
     while True:
         start = time.time()
-        set_block_poses(cam, detector, block_sizes)
+        set_block_poses_debug(cam1, cam2, detector, block_sizes)
         stop = time.time()
         print(f"Pose estimation time: {(stop-start)*1000:.2f}ms")
 
@@ -329,7 +403,8 @@ if __name__ == '__main__':
 
     # initialize camera and detector
     # cam = Camera(cam1_serial, cam1_mtx_11cm, cam1_dist_11cm)
-    cam = Camera(cam1_serial, cam1_mtx, cam1_dist)
+    cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
+    cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
     detector = dt_apriltags.Detector(nthreads=detection_threads,
                                      quad_decimate=quad_decimate,
                                      quad_sigma=quad_sigma,
@@ -340,6 +415,8 @@ if __name__ == '__main__':
 
     # define block sizes
     block_sizes = read_block_sizes('block_sizes.json')
+    # for i in range(54, 54 + 54):
+    #     block_sizes[i] = block_sizes[i-54]
 
     print(f"Block sizes: {block_sizes}")
     print(f"Corrections: {corrections}")

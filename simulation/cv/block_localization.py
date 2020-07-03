@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import dt_apriltags
 import math
-from utils import *
+from utils.utils import *
 from .transformations import matrix2pose, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
 from pyquaternion import Quaternion
 scaler = 50
@@ -366,7 +366,7 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
 
 
 def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes,
-                        corrections, camera_params, return_images, detector):
+                        corrections, camera_params1, camera_params2, return_images, detector):
 
     # calculate tag ids corresponding to block ids
     target_tag_ids = []
@@ -380,7 +380,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_id=ref_tag_id,
                                                      ref_tag_size=ref_tag_size,
                                                      ref_tag_pos=ref_tag_pos,
-                                                     camera_params=camera_params,
+                                                     camera_params=camera_params1,
                                                      corrections=corrections,
                                                      detector=detector)
 
@@ -390,7 +390,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_id=ref_tag_id,
                                                      ref_tag_size=ref_tag_size,
                                                      ref_tag_pos=ref_tag_pos,
-                                                     camera_params=camera_params,
+                                                     camera_params=camera_params2,
                                                      corrections=corrections,
                                                      detector=detector)
 
@@ -432,8 +432,10 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
             # rotation_axis = np.cross(np.array([1, 0, 0]), vec)
             # block_quat = Quaternion(axis=rotation_axis, angle=angle_between_vectors(vec, np.array([1, 0, 0])))
             # 2nd approach
-            left_tag_quat = Quaternion(matrix=left_tag_matrix)
-            right_tag_quat = Quaternion(matrix=right_tag_matrix)
+            left_tag_quat = quat_canonical_form(Quaternion(matrix=left_tag_matrix))
+            print(f'Left tag quat: {left_tag_quat}')
+            right_tag_quat = quat_canonical_form(Quaternion(matrix=right_tag_matrix) * Quaternion(axis=[0, 1, 0], degrees=180))
+            print(f'Right tag quat: {right_tag_quat}')
             block_quat = Quaternion(np.mean([left_tag_quat, right_tag_quat]))
             positions[block_id] = {'pos': block_center,
                                    'orientation': block_quat.elements,
@@ -445,13 +447,17 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                 tag_matrix = left_tag_matrix
             else:
                 tag_matrix = right_tag_matrix
-            left_tag_pose = matrix2pose(tag_matrix)
-            print(f"Tag matrix: {tag_matrix}")
+
+            tag_pose = matrix2pose(tag_matrix)
             tag_quat = Quaternion(matrix=tag_matrix)
             tag_normal = tag_quat.rotate(np.array([0, 0, 1]))
-            block_center = left_tag_pose[:3] + (tag_normal * block_sizes[block_id]['length'] * 0.5)
+            block_center = tag_pose[:3] + (tag_normal * block_sizes[block_id]['length'] * 0.5)
+            if right_tag_matrix is not None:
+                block_quat = tag_quat * Quaternion(axis=[0, 1, 0], degrees=180)
+            else:
+                block_quat = tag_quat
             positions[block_id] = {'pos': block_center,
-                                   'orientation': tag_quat.elements,
+                                   'orientation': block_quat,
                                    'tags_detected': np.array([1])}
 
         # elif right_tag_matrix is not None:

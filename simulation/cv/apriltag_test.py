@@ -23,8 +23,8 @@ if __name__ == "__main__":
 
 
     # detector #1
-    detector1_optionen = apriltag.DetectorOptions(nthreads=detection_threads, quad_decimate=quad_decimate, debug=True)
-    detector1 = apriltag.Detector(detector1_optionen)
+    # detector1_optionen = apriltag.DetectorOptions(nthreads=detection_threads, quad_decimate=quad_decimate, debug=True)
+    # detector1 = apriltag.Detector(detector1_optionen)
 
     # detector #2
     detector2 = dt_apriltags.Detector(nthreads=detection_threads, quad_decimate=quad_decimate, quad_sigma=quad_sigma)
@@ -32,11 +32,11 @@ if __name__ == "__main__":
     # test image
     # im = cv2.imread('/home/bch_svt/cartpole/simulation/screenshots/screenshot.png', cv2.IMREAD_GRAYSCALE)
     # im = cv2.imread('/home/bch_svt/cartpole/simulation/cv/pictures/test_image.bmp', cv2.IMREAD_GRAYSCALE)
-    im = cv2.imread('/home/bch_svt/cartpole/simulation/cv/test_image_cali.bmp', cv2.IMREAD_GRAYSCALE)
+    im = cv2.imread('/home/bch_svt/cartpole/simulation/cv/pictures/test_image2.bmp', cv2.IMREAD_GRAYSCALE)
 
     # detect #1
-    detections1 = detector1.detect(im)
-    print(f"Detections #1: {len(detections1)}")
+    # detections1 = detector1.detect(im)
+    # print(f"Detections #1: {len(detections1)}")
 
     # detect #2
     detections2 = detector2.detect(im)

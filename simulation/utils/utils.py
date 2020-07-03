@@ -174,4 +174,10 @@ def translation_along_axis_towards_point(src_point, dst_point, axis, quat):
     else:
         return -np.linalg.norm(projection - src_point)
 
+def quat_canonical_form(q):
+    if q[0] < 0:
+        return -q
+    else:
+        return q
+
 

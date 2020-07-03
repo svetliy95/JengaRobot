@@ -50,7 +50,7 @@ class Camera:
     def calibrate(fnames):
 
         # Defining the dimensions of checkerboard
-        CHECKERBOARD = (5, 8)
+        CHECKERBOARD = (12, 23)
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
         # Creating vector to store vectors of 3D points for each checkerboard image
@@ -81,6 +81,7 @@ class Camera:
             them on the images of checker board
             """
             if ret == True:
+                print(f"Checkerboard found!")
                 objpoints.append(objp)
                 # refining pixel coordinates for given 2d points.
                 corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
@@ -89,6 +90,8 @@ class Camera:
 
                 # Draw and display the corners
                 img = cv2.drawChessboardCorners(img, CHECKERBOARD, corners2, ret)
+            else:
+                print(f"Checkerboard not found!")
 
             # cv2.namedWindow('img', cv2.WINDOW_NORMAL)
             # cv2.resizeWindow('img', 1200, 1200)
@@ -172,12 +175,12 @@ class Camera:
         return image
 
 if __name__ == '__main__':
-    fnames = glob.glob('./calibration_images_11cm_3/*.bmp')
+    fnames = glob.glob('./cam2_calibration/*.bmp')
     mtx, dist = Camera.calibrate(fnames)
-    mtx_diff = np.divide(abs(mtx-cam1_mtx_11cm_2), mtx) * 100
-    dist_diff = np.divide(abs(dist-cam1_dist_11cm_2), dist) * 100
-    print(mtx_diff)
-    print(dist_diff)
+    # mtx_diff = np.divide(abs(mtx-cam1_mtx_11cm_2), mtx) * 100
+    # dist_diff = np.divide(abs(dist-cam1_dist_11cm_2), dist) * 100
+    # print(mtx_diff)
+    # print(dist_diff)
     print(repr(mtx))
     print(repr(dist))
     # cam = Camera('22917552', mtx, dist)
