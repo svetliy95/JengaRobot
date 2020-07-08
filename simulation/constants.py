@@ -77,7 +77,7 @@ zwischanablage_side_wall_size = np.array([block_width_mean / scaler, 0.001, bloc
 timeout_push = 5
 timeout_pull = 20
 timeout_move = 10
-timeout_step = 2
+timeout_step = 20
 
 # rewards
 reward_extract = 4

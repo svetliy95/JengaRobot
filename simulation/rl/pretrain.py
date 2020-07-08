@@ -52,15 +52,15 @@ def play(model, filename, timeout=900):
 
 env = jenga_env_wrapper(normalize=True)
 dataset = ExpertDataset(expert_path='/home/bch_svt/cartpole/simulation/rl/expert_data/combined_expert_data_(8)_layer_state_normalized.npz', verbose=1)
-runs_per_model = 16
-models_num = 3
-threads_num = 16
+runs_per_model = 1
+models_num = 1
+threads_num = 1
 
 with open('pretrain_results.log', 'a') as f:
     current_time = strftime("%d-%m-%Y_%H:%M:%S", gmtime())
     f.write(f"##########################_{current_time}\n")
 
-for epochs in [10, 900, 800, 700, 600, 500, 400]:
+for epochs in [1000, 900, 800, 700, 600, 500, 400]:
     for i in range(models_num):
         # create environment
         env = jenga_env_wrapper(normalize=True)
@@ -68,6 +68,7 @@ for epochs in [10, 900, 800, 700, 600, 500, 400]:
         # create model and pre-train
         model = PPO2('MlpPolicy', env, verbose=1)
         model.pretrain(dataset, n_epochs=epochs)
+        model.save('8games_1000epochs')
 
         results = []
         thread_pool = ThreadPool(threads_num)

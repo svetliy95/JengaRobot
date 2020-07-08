@@ -400,7 +400,6 @@ if __name__ == '__main__':
     block_pos = np.array([0, 0, 100])
     block_quat = Quaternion([1, 0, 0, 0])
 
-
     # initialize camera and detector
     # cam = Camera(cam1_serial, cam1_mtx_11cm, cam1_dist_11cm)
     cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
