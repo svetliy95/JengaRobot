@@ -143,7 +143,7 @@ cam2_mtx = np.array([[2.10038867e+03, 0.00000000e+00, 1.59039780e+03],
 cam2_dist = np.array([[-0.00600466,  0.02840844,  0.00043355,  0.00111766, -0.04208812]])
 
 # tags detection
-detection_threads = 16
+detection_threads = 8
 quad_decimate = 1
 quad_sigma = 1.3
 decode_sharpening = 1.0

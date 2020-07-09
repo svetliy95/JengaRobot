@@ -29,25 +29,25 @@ def generate_block_xml(id, size, cali: bool):
     block_z_size = height / 2
 
     if cali:
-        res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+        res = f"""<body name="block_{str(id)}" pos="{0} {0} {5 + id}" euler="0 0 0" mocap="true">
                 <geom name="block_{str(id)}" pos="0 0 0" size="{block_x_size} {block_y_size} {block_z_size}" type="box" rgba="0.8235 0.651 0.4745 1"/>
                 <geom name="shield_left_{str(id)}" pos="{-(block_x_size + shield_thickness/2)} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box"/>
-                <geom name="shield_right_{str(id)}" pos="{block_x_size + shield_thickness/2} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box" material="mat_shield"/>
+                <geom name="shield_right_{str(id)}" pos="{block_x_size + shield_thickness/2} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box"/>
             </body>\n"""
     else:
         if id < 54:
-            res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+            res = f"""<body name="block_{str(id)}" pos="{0} {0} {5 + id}" euler="0 0 0" mocap="true">
                             <geom name="block_{str(id)}" pos="0 0 0" size="{block_z_size} {block_y_size} {block_x_size}" type="box" rgba="0.8235 0.651 0.4745 1"/>
                             <geom name="shield_left_{str(id)}" pos="0 0 {-(block_x_size + shield_thickness / 2)}" size="{shield_z_size} {shield_y_size} {shield_x_size}" type="box" rgba="0 0 1 1" material="mat_shield_back"/>
                             <geom name="shield_right_{str(id)}" pos="0 0 {block_x_size + shield_thickness / 2}" size="{shield_z_size} {shield_y_size}  {shield_x_size}" type="box" rgba="0 1 0.4745 1" material="mat_shield_front"/>
                         </body>\n"""
-            res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+            res = f"""<body name="block_{str(id)}" pos="{0} {0} {5 + id}" euler="0 0 0" mocap="true">
                             <geom name="block_{str(id)}" pos="0 0 0" size="{block_x_size} {block_y_size} {block_z_size}" type="box" rgba="0.8235 0.651 0.4745 1" material="mat_block_top"/>
                             <geom name="shield_left_{str(id)}" pos="{-(block_x_size + shield_thickness / 2)} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box" material="mat_shield_back"/>
                             <geom name="shield_right_{str(id)}" pos="{block_x_size + shield_thickness / 2} 0 0" size="{shield_x_size} {shield_y_size} {shield_z_size}" type="box" material="mat_shield_front"/>
                         </body>\n"""
         else:
-            res = f"""<body name="block_{str(id)}" pos="{0} {0} {1 + id}" euler="0 0 0" mocap="true">
+            res = f"""<body name="block_{str(id)}" pos="{0} {0} {5 + id}" euler="0 0 0" mocap="true">
                                         <geom name="block_{str(id)}" pos="0 0 0" size="{block_z_size} {block_y_size} {block_x_size}" type="box" rgba="0.75 0.651 0.6 1"/>
                                         <geom name="shield_left_{str(id)}" pos="0 0 {-(block_x_size + shield_thickness / 2)}" size="{shield_z_size} {shield_y_size} {shield_x_size}" type="box" rgba="0 0 1 1" material="mat_shield_back"/>
                                         <geom name="shield_right_{str(id)}" pos="0 0 {block_x_size + shield_thickness / 2}" size="{shield_z_size} {shield_y_size}  {shield_x_size}" type="box" rgba="0 1 0.4745 1" material="mat_shield_front"/>
@@ -244,7 +244,7 @@ def set_block_poses(cam1, cam2, detector, block_sizes):
                 sim.data.set_mocap_pos(f'block_{id}', block_pos)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
 
-def set_block_poses_debug(cam1, cam2, detector, block_sizes):
+def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
     cam_params1 = cam1.get_params()
     cam_params2 = cam2.get_params()
     im1 = cam1.take_picture()
@@ -269,8 +269,8 @@ def set_block_poses_debug(cam1, cam2, detector, block_sizes):
                 else:
                     block_pos, block_quat = swap_coordinates_normal(block_pos, block_quat)
 
-
-                block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
+                if not cali_fl:
+                    block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
                 print(f"Block#{id} quat: {block_quat}")
 
                 sim.data.set_mocap_pos(f'block_{id}', block_pos + tag_height)
@@ -317,7 +317,7 @@ def get_shild_pose_mujoco(tag_id, im, detector):
 def update_shild_pos():
     while True:
         start = time.time()
-        set_block_poses_debug(cam1, cam2, detector, block_sizes)
+        set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl=calibration_mode)
         stop = time.time()
         print(f"Pose estimation time: {(stop-start)*1000:.2f}ms")
 
@@ -378,7 +378,7 @@ def swap_coordinates_normal(pos, quat):
 
 if __name__ == '__main__':
 
-    calibration_mode = False
+    calibration_mode = True
     target_tag_size = 9.6
     ref_tag_pos = np.array([0, 0, 0])
     if calibration_mode:
