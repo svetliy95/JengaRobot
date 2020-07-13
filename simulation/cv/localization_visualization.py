@@ -247,15 +247,15 @@ def set_block_poses(cam1, cam2, detector, block_sizes):
 def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
     cam_params1 = cam1.get_params()
     cam_params2 = cam2.get_params()
-    im1 = cam1.take_picture()
-    im2 = cam2.take_picture()
+    im1 = cam1.take_raw_picture()
+    im2 = cam2.take_raw_picture()
     blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
     block_ids = [i for i in range(54)]
     poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
-                        cam_params1, cam_params2, False, detector)
-    poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
-                                block_sizes, corrections,
-                                cam_params1, cam_params2, False, detector)
+                        cam_params1, cam_params2, False, detector, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
+    # poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
+    #                             block_sizes, corrections,
+    #                             cam_params1, cam_params2, False, detector)
 
     tag_height = np.array([0, 0, 2]) * scaler
     if poses1 is not None:

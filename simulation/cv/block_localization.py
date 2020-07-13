@@ -8,7 +8,7 @@ from pyquaternion import Quaternion
 scaler = 50
 one_millimeter = 0.001 * scaler
 from constants import detection_threads, quad_decimate
-from constants import *
+from cv2 import aruco
 
 class bcolors:
     HEADER = '\033[95m'
@@ -234,12 +234,42 @@ def get_block_positions_mujoco(im1, im2, block_ids, target_tag_size, ref_tag_siz
     else:
         return positions
 
+def detect_with_apriltag(img, camera_params, detector, cam_mtx, cam_dist):
+    img = cv2.undistort(img, cam_mtx, cam_dist)
+    detections = detector.detect(img, True, camera_params, tag_size=1)
+    return detections
 
-def get_camera_pose_matrix(image, tag_id, tag_size, tag_pos, camera_params, detector):
+def detect_with_aruco(img, cam_mtx, cam_dist):
+    # initialize aruco
+    aruco_dict = aruco.Dictionary_get(aruco.DICT_APRILTAG_36h11)
+    aruco_parameters = aruco.DetectorParameters_create()
+    corners, ids, rejectedImgPoints = aruco.detectMarkers(img, aruco_dict, parameters=aruco_parameters)
+
+    detections = []
+    if ids is not None:
+        for i in range(len(ids)):
+            rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[i], 1, cam_mtx, cam_dist)
+            rot_mtx, _ = cv2.Rodrigues(rvec)
+            tvec = np.reshape(np.array(tvec[0, 0]), (3, 1))
+
+            # transform rot matrix
+            q = Quaternion(matrix=rot_mtx)
+            q = Quaternion([-q[2], -q[3], q[0], q[1]])
+            rot_mtx = q.rotation_matrix
+
+            detection = dt_apriltags.Detection()
+            detection.tag_id = ids[i][0]
+            detection.pose_t = tvec
+            detection.pose_R = rot_mtx
+
+            detections.append(detection)
+
+    return detections
+
+
+def get_camera_pose_matrix(detections, tag_id, tag_size, tag_pos, camera_params):
     assert tag_pos.size == 3, "tag_size must be a 3d vector"
     assert len(camera_params) == 4, "camera_params must be a 4d tuple ([fx, fy, sx, sy])"
-
-    detections = detector.detect(image, True, camera_params, tag_size=1)
 
     # print(f"Detections: {detections}")
 
@@ -282,14 +312,21 @@ def get_camera_pose_matrix(image, tag_id, tag_size, tag_pos, camera_params, dete
 
 
 def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, ref_tag_size,
-                             ref_tag_pos, camera_params, corrections, detector):
+                             ref_tag_pos, camera_params, corrections, detector, cam_mtx, cam_dist):
     assert ref_tag_pos.size == 3, "tag_pos_ref must be a 3d vector"
 
-    # get camera pose as a transformation matrix
-    camera_pose_matrix = get_camera_pose_matrix(img, ref_tag_id, ref_tag_size, ref_tag_pos, camera_params, detector)
+    # detect
+    # detections = detector.detect(img, True, camera_params, tag_size=1)
+    if detection_method == 'apriltag':
+        detections = detect_with_apriltag(img, camera_params, detector, cam_mtx, cam_dist)
+    elif detection_method == 'aruco':
+        detections = detect_with_aruco(img, cam_mtx, cam_dist)
+    else:
+        raise ValueError('Wrong detection method!')
 
-    # initialize and start detector
-    detections = detector.detect(img, True, camera_params, tag_size=1)
+
+    # get camera pose as a transformation matrix
+    camera_pose_matrix = get_camera_pose_matrix(detections, ref_tag_id, ref_tag_size, ref_tag_pos, camera_params)
 
     # return if floor tag not detected
     if camera_pose_matrix is None:
@@ -366,7 +403,7 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
 
 
 def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes,
-                        corrections, camera_params1, camera_params2, return_images, detector):
+                        corrections, camera_params1, camera_params2, return_images, detector, cam_mtx1, cam_dist1, cam_mtx2, cam_dist2):
 
     # calculate tag ids corresponding to block ids
     target_tag_ids = []
@@ -382,7 +419,9 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_pos=ref_tag_pos,
                                                      camera_params=camera_params1,
                                                      corrections=corrections,
-                                                     detector=detector)
+                                                     detector=detector,
+                                                     cam_mtx=cam_mtx1,
+                                                     cam_dist=cam_dist1)
 
     tag_pose_matrices_im2 = get_tag_poses_from_image(img=im2,
                                                      target_tag_ids=target_tag_ids,
@@ -392,7 +431,9 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_pos=ref_tag_pos,
                                                      camera_params=camera_params2,
                                                      corrections=corrections,
-                                                     detector=detector)
+                                                     detector=detector,
+                                                     cam_mtx=cam_mtx2,
+                                                     cam_dist=cam_dist2)
 
     positions = {}
 

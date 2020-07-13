@@ -180,4 +180,6 @@ def quat_canonical_form(q):
     else:
         return q
 
-
+# computes diffs in mtx elements in percents
+def mtx_diff(mtx1, mtx2):
+    return np.divide((mtx1 - mtx2), mtx1) * 100

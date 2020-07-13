@@ -145,6 +145,9 @@ class Camera:
         # resized = cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
         return resized
 
+    def undistort(self, img):
+        return cv2.undistort(img, self.mtx, self.dist)
+
     def take_picture(self, scaler=1):
         image = self.camera.GrabOne(1000).Array
         undistorted_image = cv2.undistort(image, self.mtx, self.dist)
