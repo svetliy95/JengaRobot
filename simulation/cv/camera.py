@@ -164,6 +164,28 @@ class Camera:
             undistorted_image = self._scale_image(undistorted_image, scaler)
         return undistorted_image
 
+    def start_grabbing(self):
+        self.stop_grabbing()
+        self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+
+    def stop_grabbing(self):
+        self.camera.StopGrabbing()
+
+    def get_raw_image(self):
+        if not self.camera.IsGrabbing():
+            return
+
+        grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+        img = grabResult.GetArray()
+
+        return img
+
+    def get_undistorted_image(self):
+        img = self.get_raw_image()
+        img = self.undistort(img)
+        return img
+
+
     def take_raw_picture(self):
         image = self.camera.GrabOne(1000).Array
         # image = np.rot90(image, 3)

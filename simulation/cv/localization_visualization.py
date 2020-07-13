@@ -247,12 +247,13 @@ def set_block_poses(cam1, cam2, detector, block_sizes):
 def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
     cam_params1 = cam1.get_params()
     cam_params2 = cam2.get_params()
-    im1 = cam1.take_raw_picture()
-    im2 = cam2.take_raw_picture()
+    im1 = cam1.get_raw_image()
+    im2 = cam2.get_raw_image()
     blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
     block_ids = [i for i in range(54)]
     poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
                         cam_params1, cam_params2, False, detector, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
+
     # poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
     #                             block_sizes, corrections,
     #                             cam_params1, cam_params2, False, detector)
@@ -378,7 +379,7 @@ def swap_coordinates_normal(pos, quat):
 
 if __name__ == '__main__':
 
-    calibration_mode = True
+    calibration_mode = False
     target_tag_size = 9.6
     ref_tag_pos = np.array([0, 0, 0])
     if calibration_mode:
@@ -404,6 +405,8 @@ if __name__ == '__main__':
     # cam = Camera(cam1_serial, cam1_mtx_11cm, cam1_dist_11cm)
     cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
     cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
+    cam1.start_grabbing()
+    cam2.start_grabbing()
     detector = dt_apriltags.Detector(nthreads=detection_threads,
                                      quad_decimate=quad_decimate,
                                      quad_sigma=quad_sigma,

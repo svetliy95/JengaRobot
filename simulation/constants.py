@@ -145,6 +145,6 @@ cam2_dist = np.array([[-0.00600466,  0.02840844,  0.00043355,  0.00111766, -0.04
 # tags detection
 detection_method = 'apriltag'  # 'apriltag' or 'aruco'
 detection_threads = 8
-quad_decimate = 1
+quad_decimate = 2
 quad_sigma = 1.3
 decode_sharpening = 1.0
