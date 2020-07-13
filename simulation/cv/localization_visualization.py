@@ -264,6 +264,7 @@ def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
             if id in poses1:
                 block_pos = poses1[id]['pos']
                 block_quat = poses1[id]['orientation']
+                tags_detected = poses1[id]['tags_detected']
 
                 if calibration_mode:
                     block_pos, block_quat = swap_coordinates_cali(block_pos, block_quat)
@@ -276,6 +277,17 @@ def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
 
                 sim.data.set_mocap_pos(f'block_{id}', block_pos + tag_height)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
+
+                yelow = np.array([252, 186, 3, 255]) / 255
+                if tags_detected == 1:
+                    set_block_color(id, yelow, sim)
+                else:
+                    blue = np.array([66, 135, 245, 255]) / 255
+                    green = np.array([50, 168, 82, 255]) / 255
+                    set_block_color(id, green, sim)
+            else:
+                red = np.array([252, 50, 57, 255]) / 255
+                set_block_color(id, red, sim)
 
     # if poses2 is not None:
     #     for id in range(54):
