@@ -97,8 +97,8 @@ def generate_block(number, pos_sigma, angle_sigma, spacing, seed):
     mass = random_generator.normal(block_mass_mean, block_mass_sigma)
     x = random_generator.normal(x, pos_sigma)
     y = random_generator.normal(y, pos_sigma)
-    [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs() / 2, width_distribution.rvs() / 2,
-                                                  height_distribution.rvs() / 2]
+    [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs()[0] / 2, width_distribution.rvs()[0] / 2,
+                                                  height_distribution.rvs()[0] / 2]
 
     # WARNING: debugging code!
     # if number == 0:
