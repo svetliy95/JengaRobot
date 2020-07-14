@@ -8,7 +8,6 @@ import time
 from threading import Thread, Lock
 
 # animated plot
-import pyformulas as pf
 import matplotlib; matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib import style
@@ -23,7 +22,6 @@ import cv2
 import math
 import logging
 import colorlog
-from simple_pid import PID
 import gym
 import collections
 from multiprocessing import Process, Queue, Pool
@@ -33,7 +31,6 @@ from pyinstrument import Profiler
 import os
 import traceback
 import glfw
-import psutil
 import sys
 from utils.utils import get_angle_between_quaternions_3ax
 import csv

@@ -474,9 +474,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
             # block_quat = Quaternion(axis=rotation_axis, angle=angle_between_vectors(vec, np.array([1, 0, 0])))
             # 2nd approach
             left_tag_quat = quat_canonical_form(Quaternion(matrix=left_tag_matrix))
-            print(f'Left tag quat: {left_tag_quat}')
             right_tag_quat = quat_canonical_form(Quaternion(matrix=right_tag_matrix) * Quaternion(axis=[0, 1, 0], degrees=180))
-            print(f'Right tag quat: {right_tag_quat}')
             block_quat = Quaternion(np.mean([left_tag_quat, right_tag_quat]))
             positions[block_id] = {'pos': block_center,
                                    'orientation': block_quat.elements,
@@ -522,8 +520,6 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
         return positions
 
 def correct_position(current_pos, correction, quat):
-    print(f"Current pos: {current_pos}")
-    print(f"Correction: {correction}")
     res = current_pos
     res += correction[0] * quat.rotate(x_unit_vector)
     res += correction[1] * quat.rotate(y_unit_vector)
