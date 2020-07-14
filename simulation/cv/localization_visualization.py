@@ -12,7 +12,10 @@ from copy import deepcopy
 import dt_apriltags
 import math
 from cv.blocks_calibration import read_corrections, correct_poses
-import random
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib; matplotlib.use("TkAgg")
 
 def generate_block_xml(id, size, cali: bool):
     length = size['length'] * scaler
@@ -273,7 +276,7 @@ def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
 
                 if not cali_fl:
                     block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
-                print(f"Block#{id} quat: {block_quat}")
+                # print(f"Block#{id} quat: {block_quat}")
 
                 sim.data.set_mocap_pos(f'block_{id}', block_pos + tag_height)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
@@ -285,6 +288,7 @@ def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
                     blue = np.array([66, 135, 245, 255]) / 255
                     green = np.array([50, 168, 82, 255]) / 255
                     set_block_color(id, green, sim)
+                    measured_poses[id].append(poses1[id]['pos'])
             else:
                 red = np.array([252, 50, 57, 255]) / 255
                 set_block_color(id, red, sim)
@@ -408,6 +412,7 @@ if __name__ == '__main__':
     shield_pos = np.array([0.0, 50 + 3 + 22, -(50 - 10 - 2.8 - 12)]) * scaler
     shield_pos += cali_pos
     shield_quat = Quaternion([1, 0, 0, 0])
+    measured_poses = {i: [] for i in range(54)}
 
     # blocks
     block_pos = np.array([0, 0, 100])
@@ -457,7 +462,7 @@ if __name__ == '__main__':
     estimated_shield_pos = np.array([0, 0, 0])
 
     # simulate
-    while True:
+    while t < 100000:
         t += 1
 
         if t % 100 == 0:
@@ -479,3 +484,21 @@ if __name__ == '__main__':
 
         if t > 100 and os.getenv('TESTING') is not None:
             break
+
+    dataset = []
+    for id in measured_poses:
+        mean = np.mean(measured_poses[id], axis=0)
+        print(f"Mean = {mean}")
+        errs = dict()
+        for m in measured_poses[id]:
+            err = m - mean
+            data = {'id': id, 'err': err[0], 'axis': 'x'}
+            dataset.append(data)
+            data = {'id': id, 'err': err[1], 'axis': 'y'}
+            dataset.append(data)
+            data = {'id': id, 'err': err[2], 'axis': 'z'}
+            dataset.append(data)
+
+    df = pd.DataFrame(dataset)
+    sns.stripplot(x='id', y='err', hue='axis', data=df, dodge=True)
+    plt.show()
