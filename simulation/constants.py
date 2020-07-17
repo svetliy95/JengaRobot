@@ -148,3 +148,9 @@ detection_threads = 8
 quad_decimate = 2
 quad_sigma = 1.3
 decode_sharpening = 1.0
+
+
+# robots
+buffer_size = 1024
+right_robot_ip = '192.168.10.103'
+right_robot_port = 10002
