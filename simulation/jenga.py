@@ -35,6 +35,7 @@ import sys
 from utils.utils import get_angle_between_quaternions_3ax
 import csv
 import random
+import multiprocessing_logging
 
 profiler = Profiler()
 
@@ -59,6 +60,9 @@ file_handler = logging.FileHandler(filename='jenga.log', mode='w')
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.DEBUG)
 log.addHandler(file_handler)
+
+# important line, without it there is a concurrency problem between processes
+multiprocessing_logging.install_mp_handler(log)
 
 
 class SimulationResult:
@@ -258,8 +262,12 @@ class jenga_env(gym.Env):
         while self.pusher is None or self.extractor is None:
             time.sleep(0.1)
 
+        log.debug(f"Pusher and extractor are ready!")
+
         # move pusher to the starting position
         self.move_to_random_block()
+
+        log.debug(f"Env initialization done!")
 
     def off_screen_render_and_plot_errors(self, line1, fig_errors):
         positions, im1, im2 = self.tower.get_poses_cv(range(g_blocks_num))
@@ -512,7 +520,9 @@ class jenga_env(gym.Env):
         log.debug(f"Move to random block #1")
         # get only legal block positions (check only the blocks that are below the highest full layer)
         positions = self.tower.get_positions()
+        log.debug(f"After get positions")
         layers = self.tower.get_layers(positions)
+        log.debug(f"After get layers")
         if len(layers[-1]) == 3:
             offset_from_top = 1
         else:
@@ -520,6 +530,7 @@ class jenga_env(gym.Env):
         max_lvl = len(layers) - offset_from_top
         available_lvls = {lvl: self.checked_positions[lvl] for lvl in self.checked_positions if lvl < max_lvl}
 
+        log.debug(f"Move to random block #2")
         if not available_lvls:
             return False
 
@@ -536,9 +547,11 @@ class jenga_env(gym.Env):
         if not self.checked_positions[lvl]:
             del self.checked_positions[lvl]
 
+        log.debug(f"Before move to block")
         self.move_to_block(lvl, pos)
+        log.debug(f"After move to block")
 
-        log.debug(f"Move to random block #2")
+        log.debug(f"Move to random block #3")
         return True
 
     def get_state(self, new_block, force=0, block_displacement=0, mode=0):
@@ -549,7 +562,7 @@ class jenga_env(gym.Env):
 
         if mode == 0:
 
-            print(f"Get state#1")
+            log.debug(f"Get state#1")
 
             # pause simulation
             self.pause()
@@ -562,10 +575,14 @@ class jenga_env(gym.Env):
                 side = 1
 
             # get block positions
+            log.debug(f"Before get positions")
             block_positions = self.tower.get_positions()
+            log.debug(f"After get positions")
 
             # calculate tilt
+            log.debug(f"Before get tilt")
             tilt_2ax = self.tower.get_tilt_2ax(block_positions, self.current_block_id)
+            log.debug(f"After get tilt")
             if new_block:
                 self.initial_tilt_2ax = tilt_2ax
                 self.previous_step_displacement = np.array([0, 0])
@@ -573,10 +590,13 @@ class jenga_env(gym.Env):
             last_tilt_2ax = tilt_2ax - self.initial_tilt_2ax
 
             # get last z_rotation
+            log.debug(f"Before get z rotaiton")
             z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block)
+            log.debug(f"After get z rotaiton")
 
             # get current round displacement
             current_round_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions)
+            log.debug(f"After get displacement")
 
             # get last step tower displacement and z rotation
             current_step_tower_displacement = current_round_displacement - self.previous_step_displacement
@@ -597,7 +617,9 @@ class jenga_env(gym.Env):
             # 2) □□x
             # 3) x□□
             # 4) x□x
+            log.debug(f"Before get layers state")
             layers = self.tower.get_layers_state(block_positions)
+            log.debug(f"After get layers state")
             current_layer = layers[self.current_lvl]
             print(f"Current layer: {current_layer}")
             layer_configuration = 0
@@ -620,7 +642,7 @@ class jenga_env(gym.Env):
                              current_step_tower_displacement[1], current_round_displacement[0],
                              current_round_displacement[1], last_tilt_2ax[0], last_tilt_2ax[1], current_step_z_rot,
                              z_rotation_last, side, block_height, self.current_lvl_pos, layer_configuration])
-            print(f"Get state#2")
+            log.debug(f"Get state#2")
             return state
 
         if mode == 1:
@@ -704,7 +726,7 @@ class jenga_env(gym.Env):
 
     # returns observation, reward, done, info
     def step(self, action, normalize):
-        print(f"Jenga step#1")
+        log.debug(f"Jenga step#1")
         if self.exception_occurred() and self.tower_toppled():
             return self.last_state, self.last_reward, True, {'exception': True, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
 
@@ -713,19 +735,21 @@ class jenga_env(gym.Env):
 
         if self.tower_toppled():
             return self.last_state, tower_toppled_reward, True, {'exception': False, 'toppled': True, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
-        print(f"Jenga step#2")
+        log.debug(f"Jenga step#2")
         if action == 0:
-            print(f"Jenga step#3")
+            log.debug(f"Jenga step#3")
             # reset state variables
             self.total_distance = 0
             self.steps_pushed = 0
+            log.debug(f"Before move to random block")
             res = self.move_to_random_block()
+            log.debug(f"After move to random block")
             done = not res
             reward = 0
             info = {'exception': False, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
-            print(f"Before get state!")
+            log.debug(f"Before get state!")
             state = self.get_state(new_block=True)
-            print(f"After get state!")
+            log.debug(f"After get state!")
 
             # normalize state
             if normalize:
@@ -737,28 +761,34 @@ class jenga_env(gym.Env):
 
             # wait until tower stabilizes
             self.sleep_simtime(2)
-            print(f"Jenga step#4")
+            log.debug(f"Jenga step#4")
             return state, reward, done, info
 
         if action == 1:
-            print(f"Jenga step#5")
+            log.debug(f"Jenga step#5")
             # extract and move to the next block
             if self.steps_pushed == self.max_pushing_distance:
-                print(f"Jenga step#6")
+                log.debug(f"Jenga step#6")
                 # reset state variables
                 self.total_distance = 0
                 self.steps_pushed = 0
 
+                log.debug(f"Before pull_and_place")
                 self.pull_and_place(self.current_block_id//3, self.current_block_id % 3)
+                log.debug(f"After pull_and_place")
 
 
-
+                log.debug(f"Before move_to_random_block")
                 res = self.move_to_random_block()
+                log.debug(f"After move_to_random_block")
                 self.extracted_blocks += 1
                 done = not res
                 reward = reward_extract
                 info = {'exception': False, 'toppled': False, 'timeout': False, 'last_screenshot': self.last_screenshot, 'extracted_blocks': self.extracted_blocks}
+
+                log.debug(f"Before  get state")
                 state = self.get_state(new_block=True)
+                log.debug(f"After  get state")
 
                 # normalize state
                 if normalize:
@@ -771,7 +801,7 @@ class jenga_env(gym.Env):
                 # wait until tower stabilizes
                 self.sleep_simtime(2)
 
-                print(f"Jenga step#7")
+                log.debug(f"Jenga step#7")
                 return state, reward, done, info
 
             else:  # push
@@ -797,10 +827,13 @@ class jenga_env(gym.Env):
                 # self.steps_pushed += 1
                 # return state, 0, False, info
 
-                print(f"Jenga step#8")
+                log.debug(f"Jenga step#8")
                 force, displacement = self.push()
+                log.debug(f"Pushed!")
                 self.steps_pushed += 1
+                log.debug(f"Before get state")
                 state = self.get_state(new_block=False, force=force, block_displacement=displacement)
+                log.debug(f"After get state")
 
 
                 # np.array([force, block_distance, total_block_distance, current_step_tower_displacement[0],
@@ -820,7 +853,7 @@ class jenga_env(gym.Env):
                 self.last_state = state
                 self.last_reward = reward
 
-                print(f"Jenga step#9")
+                log.debug(f"Jenga step#9")
 
                 return state, reward, done, info
 
@@ -910,6 +943,11 @@ class jenga_env(gym.Env):
         line1 = ax.bar(x_errors, y_errors)
         ax.grid(zorder=0)
 
+        log.debug(f"Initialization done")
+
+        debug_tower_toppled_time = int(random.random()*10000 + 1)
+        debug_tower_toppled_time = 20000
+
         # simulation loop
         try:
             while not self.tower_toppled() and not self.simulation_aborted:
@@ -931,6 +969,10 @@ class jenga_env(gym.Env):
                     if self.t % 100 == 0 and self.tower.toppled(self.tower.get_positions(), self.current_block_id):
                         self.toppled_fl = True
                         log.debug(f"Tower toppled!")
+
+                    if self.t == debug_tower_toppled_time:
+                        self.toppled_fl = True
+                        log.debug(f"Fake tower toppled!")
 
                     # get positions of blocks and plot images
                     if self.t % 100 == 0 and self.render and not self.on_screen_rendering:
@@ -966,9 +1008,10 @@ class jenga_env(gym.Env):
                     time.sleep(0.001)
             log.debug(f"Exit try!")
         except Exception:
-            log.error(f"Exception occured!")
+            log.exception(f"Exception occured!")
             traceback.print_exc()
             self.exception_fl = True
+
         self.simulation_over = True
         # self.debug_write_collected_errors()
         log.debug(f"Exit simulation thread!")
@@ -1077,6 +1120,7 @@ class jenga_env_wrapper(gym.Env):
     observation_space = gym.spaces.Box(low=high, high=high)
 
     def __init__(self, normalize, seed=None):
+        log.debug(f"Start initialization")
         self.action_q = Queue()
         self.state_q = Queue()
         self.process_running_q = Queue()
@@ -1085,21 +1129,29 @@ class jenga_env_wrapper(gym.Env):
         self.action_counter = 0
         self.normalize = normalize
         self.seed = seed
+        self.sim_pid = None
 
         # variable for the last state
         self.last_response = None
+        log.debug(f"Finish initialization")
 
     def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue, normalize, seed):
-
+        log.debug(f"Start process")
         env = jenga_env(render=True, seed=seed)
+        log.debug(f"Env created")
         flag = True
+        debug_collapse_time = random.random()*30 + 3
+        start_time = time.time()
         while flag and process_running_q.empty():
+            # if time.time() - start_time > debug_collapse_time:
+            #     env.debug_move_to_zero()
+
             if not action_q.empty():
-                print("Loop #1")
+                log.debug("Loop #1")
                 action = action_q.get()
-                print(f"Action: {action}")
+                log.debug(f"Action: {action}")
                 obs, reward, done, info = env.step(action, normalize=normalize)
-                print(f"After step!")
+                log.debug(f"After step!")
                 state_q.put((obs, reward, done, info))
                 if info['exception'] or info['toppled']:
                     if info['exception']:
@@ -1108,29 +1160,43 @@ class jenga_env_wrapper(gym.Env):
                         log.info(f"Tower toppled!")
                     flag = False
             if not get_state_q.empty():
-                print(f"Loop #2")
+                log.debug(f"Loop #2")
                 state = env.get_state(new_block=True)
                 state_q.put(state)
+                log.debug(f"Before get state")
                 get_state_q.get()
+                log.debug(f"After get state")
             time.sleep(0.1)
 
+            if env.exception_occurred() or env.tower_toppled():
+                if env.exception_occurred():
+                    log.exception(f"Exception occurred!")
+                    info['exception'] = True
+                if env.tower_toppled():
+                    info['toppled'] = True
+                    log.info(f"Tower toppled!")
+                state_q.put((obs, reward, done, info))
+                flag = False
+
         if not process_running_q.empty():
-            print(f"Abort simulation from wrapper!")
+            log.debug(f"Abort simulation from wrapper!")
             env.abort_simulation()
-        print(f"Flag: {flag}, process_running_q.empty() == {process_running_q.empty()}")
-        print(f"action_q.empty() == {action_q.empty()}")
-        print(f"Process ends!")
+        log.debug(f"Flag: {flag}, process_running_q.empty() == {process_running_q.empty()}")
+        log.debug(f"action_q.empty() == {action_q.empty()}")
+        log.debug(f"Process ends!")
 
     def step(self, action):
-        print(f'Step #1')
-        print(f"Action # {self.action_counter}: {action}")
+        log.debug(f'Step #1')
+        log.debug(f"Action # {self.action_counter}: {action}")
         self.action_counter += 1
         self.action_q.put(action)
         try:
+            log.debug(f"Before get state")
             res = self.state_q.get(timeout=timeout_step)
+            log.debug(f"After get state")
             self.last_response = res
             # print(res)
-            print(f"Step #2")
+            log.debug(f"Step #2")
             return res
         except:
             # stop simulation
@@ -1145,101 +1211,127 @@ class jenga_env_wrapper(gym.Env):
             return obs, reward, done, info
 
     def reset(self):
-        print(f"Reset #1")
+        log.debug(f"Reset #1")
         self.process_running_q.put(1)
         if self.process is not None:
             while self.process.is_alive():
-                print('Wait for process exit!')
+                log.debug('Wait for process exit!')
                 time.sleep(0.1)
+        log.debug(f"Before processor running get")
         self.process_running_q.get()
+        log.debug(f"After processor running get")
 
         # reset object variables
         self.__init__(self.normalize)
 
+        log.debug(f"Before start new process")
         self.start_new_process()
+        log.debug(f"SIM_PID:{self.sim_pid}:After start new process")
         self.get_state_q.put(1)
+        log.debug(f"SIM_PID:{self.sim_pid}:Before get state")
         state = self.state_q.get()
-        print(f"Reset #2")
+        log.debug(f"SIM_PID:{self.sim_pid}:After get state")
+        log.debug(f"SIM_PID:{self.sim_pid}:Reset #2")
         return state
 
     def close(self):
-        print(f"Close!")
+        log.debug(f"SIM_PID:{self.sim_pid}:Close!")
         if self.process.is_alive():
             self.process_running_q.put(1)
-            print(f"Before wait")
+            log.debug(f"SIM_PID:{self.sim_pid}:Before wait")
             while self.process.is_alive():
                 time.sleep(0.1)
-            print(f"After wait")
+            log.debug(f"SIM_PID:{self.sim_pid}:After wait")
             self.process_running_q.get(timeout=timeout_step)
-            print(f"After process stopping")
-        print(f"Closed!")
+            log.debug(f"SIM_PID:{self.sim_pid}:After process stopping")
+        log.debug(f"SIM_PID:{self.sim_pid}:Closed!")
 
+    def process_func_debug(self):
+
+        print(f"Process started!!!")
+        log.debug(f"Process started!!!")
+        # print(f"Process started2!!!")
+        # foo()
+        time.sleep(10)
 
     def start_new_process(self):
+        log.debug(f"Start new process #1")
         self.process = Process(target=self.env_process, args=(self.action_q, self.state_q, self.process_running_q, self.get_state_q, self.normalize, self.seed))
+        log.debug(f"Start new process #2")
         self.process.start()
+        self.sim_pid = self.process.pid
+        log.debug(f"SIM_PID:{self.sim_pid}:Start new process #3")
+
+    def get_pid(self):
+        return self.sim_pid
 
 
 if __name__ == "__main__":
 
-    start_total_time = time.time()
+    try:
+        a = 1 / 0
+    except:
+        log.exception("Test exception")
 
 
-    # params
-    N = 1
-    TOTAL = 1
-    timeout = 10  # in seconds
-    render = True
-    seed = None
-
-
-    process = Process(target=run_one_simulation, args=(render, timeout, seed))
-    process.start()
-
-    while True:
-        time.sleep(1)
-
-
-    all_results = [None for i in range(TOTAL)]
-    if N == -1:
-        pool = Pool(maxtasksperchild=1)
-    else:
-        pool = Pool(N, maxtasksperchild=1)
-    f = open('final_results.log', mode='w')
-
-    # start the execution using a process pool
-    for i in range(TOTAL):
-        all_results[i] = pool.apply_async(func=run_one_simulation, args=(render, timeout, seed))
-
-    # print results while running
-    while any(list(map(lambda x: not x.ready(), all_results))):
-        log.debug(f"######## Intermediate results #########")
-        for i in range(TOTAL):
-            if all_results[i].ready():
-                res = all_results[i].get()
-                log.debug(str(res))
-        log.debug(f"#######################################")
-        time.sleep(60)
-
-
-    # print final results:
-    log.debug(f"######## Final results #########")
-    for i in range(TOTAL):
-        r = all_results[i].get()
-        if r is not None:
-            log.debug(f"#{i} " + str(r))
-            f.write(f"#{i} " + str(r) + "\n")
-            cv2.imwrite(f'./screenshots/res_scr#{i}.png', r.screenshot)
-        else:
-            log.debug(f"#{i} None")
-            f.write(f"#{i} None\n")
-
-    log.debug(f"################################")
-
-    # calculate and print the total elapsed time
-    elapsed_total_time = time.time() - start_total_time
-    log.debug(f"Elapsed time in total: {int(elapsed_total_time)}s")
-    log.debug(f"Time per simulation: {int(elapsed_total_time/TOTAL)}s")
+    # start_total_time = time.time()
+    #
+    #
+    # # params
+    # N = 1
+    # TOTAL = 1
+    # timeout = 10  # in seconds
+    # render = True
+    # seed = None
+    #
+    #
+    # process = Process(target=run_one_simulation, args=(render, timeout, seed))
+    # process.start()
+    #
+    # while True:
+    #     time.sleep(1)
+    #
+    #
+    # all_results = [None for i in range(TOTAL)]
+    # if N == -1:
+    #     pool = Pool(maxtasksperchild=1)
+    # else:
+    #     pool = Pool(N, maxtasksperchild=1)
+    # f = open('final_results.log', mode='w')
+    #
+    # # start the execution using a process pool
+    # for i in range(TOTAL):
+    #     all_results[i] = pool.apply_async(func=run_one_simulation, args=(render, timeout, seed))
+    #
+    # # print results while running
+    # while any(list(map(lambda x: not x.ready(), all_results))):
+    #     log.debug(f"######## Intermediate results #########")
+    #     for i in range(TOTAL):
+    #         if all_results[i].ready():
+    #             res = all_results[i].get()
+    #             log.debug(str(res))
+    #     log.debug(f"#######################################")
+    #     time.sleep(60)
+    #
+    #
+    # # print final results:
+    # log.debug(f"######## Final results #########")
+    # for i in range(TOTAL):
+    #     r = all_results[i].get()
+    #     if r is not None:
+    #         log.debug(f"#{i} " + str(r))
+    #         f.write(f"#{i} " + str(r) + "\n")
+    #         cv2.imwrite(f'./screenshots/res_scr#{i}.png', r.screenshot)
+    #     else:
+    #         log.debug(f"#{i} None")
+    #         f.write(f"#{i} None\n")
+    #
+    # log.debug(f"################################")
+    #
+    # # calculate and print the total elapsed time
+    # elapsed_total_time = time.time() - start_total_time
+    # log.debug(f"Elapsed time in total: {int(elapsed_total_time)}s")
+    # log.debug(f"Time per simulation: {int(elapsed_total_time/TOTAL)}s")
 
     # env = jenga_env_wrapper()
     #

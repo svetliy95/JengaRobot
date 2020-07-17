@@ -25,8 +25,15 @@ log = logging.Logger(__name__)
 formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(funcName)s:%(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
-stream_handler.setLevel(logging.DEBUG)
+stream_handler.setLevel(logging.INFO)
 log.addHandler(stream_handler)
+
+log = logging.Logger("file_logger")
+file_formatter = logging.Formatter('%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
+file_handler = logging.FileHandler(filename='tower.log', mode='w')
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.DEBUG)
+log.addHandler(file_handler)
 
 
 class Tower:
@@ -48,6 +55,7 @@ class Tower:
     orientation_sigma = 2/3
 
     def __init__(self, sim, viewer):
+        log.debug(f"Init #1")
         self.sim = sim
         self.viewer = viewer
         positions = self.get_positions()
@@ -59,6 +67,7 @@ class Tower:
         self.ref_orientations = copy.deepcopy(orientations)
         self.last_ref_orientations = copy.deepcopy(orientations)
         self.toppled_fl = False
+        log.debug(f"Init #2")
 
 
     def get_position(self, num):

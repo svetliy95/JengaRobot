@@ -462,7 +462,7 @@ if __name__ == '__main__':
     estimated_shield_pos = np.array([0, 0, 0])
 
     # simulate
-    while t < 100000:
+    while True:
         t += 1
 
         if t % 100 == 0:
