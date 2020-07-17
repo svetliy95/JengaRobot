@@ -28,6 +28,13 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
+log = logging.Logger("file_logger")
+file_formatter = logging.Formatter('%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
+file_handler = logging.FileHandler(filename='pusher.log', mode='w')
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.DEBUG)
+log.addHandler(file_handler)
+
 class Pusher():
     # pusher start pos
     START_X = 0.15 * scaler
@@ -184,6 +191,7 @@ class Pusher():
             return 2
 
     def move_to_block(self, block_num):
+        log.debug(f"Move to block #1")
         # set current block
         self.current_block = block_num
 
@@ -194,9 +202,13 @@ class Pusher():
         self.tower.last_ref_positions = copy.deepcopy(self.tower.get_positions())
         self.tower.last_ref_orientations = copy.deepcopy(self.tower.get_orientations())
 
+        log.debug(f"After deep copies")
+
         # get orientation of the target block as a quaternion
         block_quat = Quaternion(self.tower.get_orientation(block_num))
         block_pos = np.array(self.tower.get_position(block_num))
+
+        log.debug(f"After get poses and orientations")
 
         # calculate pusher orientation
         first_block_end = block_pos + block_quat.rotate(x_unit_vector) * block_length_mean / 2
@@ -208,6 +220,7 @@ class Pusher():
         else:
             offset_direction_quat = block_quat * Quaternion(axis=[0, 0, 1], degrees=180)
 
+        log.debug(f"After transformations")
 
         block_x_face_normal_vector = offset_direction_quat.rotate(x_unit_vector)
         target_x = block_pos[0] + (block_length_mean / 2 + gap) * block_x_face_normal_vector[0]
@@ -216,28 +229,41 @@ class Pusher():
 
         target = np.array([target_x, target_y, target_z]) + np.array(block_x_face_normal_vector) * block_length_mean
 
+        log.debug(f"After target definition")
+
         # move pusher backwards to avoid collisions
+        log.debug(f"Before move along own axis")
         self.move_along_own_axis('x', block_length_mean)
+        log.debug(f"After move along own axis")
 
         # move through stopovers
         stopovers = self._get_stopovers(self._get_quarter(self.get_position()),
                                         self._get_quarter(target),
                                         target[2])
+
+        log.debug(f"After get stopovers")
         for stopover in stopovers:
             log.debug(f"Stopover")
             self.set_position(stopover)
             self._sleep_simtime(0.2)
 
+        log.debug(f"After move to stopovers")
+
         # rotate pusher towards the block
         self.set_orientation(offset_direction_quat)
+        log.debug(f"After set orientation")
 
         # move to intermediate target
         self.set_position(target)
+        log.debug(f"After set position")
 
         # move to the end target
         target = np.array([target_x, target_y, target_z])
         self.set_position(target)
+        log.debug(f"After set position #2")
         self._sleep_simtime(0.3)
+
+        log.debug(f"Move to block #2")
 
     def move_pusher_to_next_block(self):
         if self.current_block < g_blocks_num - 1:

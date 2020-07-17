@@ -491,10 +491,15 @@ class jenga_env(gym.Env):
         self.pause_fl = False
 
     def move_to_block(self, lvl, pos):
+        log.debug(f"Before get positions")
         positions = self.tower.get_positions()
+        log.debug(f"After get positions")
         block_id = self.tower.get_block_id_from_pos(lvl, pos, positions)
+        log.debug(f"After get block id from pos")
         if block_id is not None:
+            log.debug(f"Before pusher move to block")
             self.pusher.move_to_block(block_id)
+            log.debug(f"After pusher move to block")
             self.current_block_id = block_id
         else:
             log.warning(f"There is no block on position ({lvl}, {pos}).")
