@@ -28,8 +28,8 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-log = logging.Logger("file_logger")
-file_formatter = logging.Formatter('%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
+log = logging.Logger(__name__)
+file_formatter = logging.Formatter('%(asctime)s:%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
 file_handler = logging.FileHandler(filename='pusher.log', mode='w')
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.DEBUG)
@@ -208,6 +208,9 @@ class Pusher():
         block_quat = Quaternion(self.tower.get_orientation(block_num))
         block_pos = np.array(self.tower.get_position(block_num))
 
+        log.debug(f"Block quat: {block_quat}")
+        log.debug(f"Block pos: {block_pos}")
+
         log.debug(f"After get poses and orientations")
 
         # calculate pusher orientation
@@ -249,6 +252,7 @@ class Pusher():
 
         log.debug(f"After move to stopovers")
 
+        log.debug(f"Offset direction quat: {offset_direction_quat}")
         # rotate pusher towards the block
         self.set_orientation(offset_direction_quat)
         log.debug(f"After set orientation")
@@ -367,7 +371,27 @@ class Pusher():
             self._sleep_simtime(0.1)
 
     def wait_until_rotation_done(self):
-        while math.degrees(get_angle_between_quaternions(self.get_actual_orientation(),
-                                                         self.get_orientation())) > self.rotation_tolerance and \
+
+        actual_orientation = self.get_actual_orientation()
+        orientation = self.get_orientation()
+
+        try:
+            condition = math.degrees(get_angle_between_quaternions(actual_orientation,
+                                                         orientation))
+        except:
+            log.exception(f"Actual orientation: {repr(actual_orientation)}, orientation: {repr(orientation)}")
+
+        while condition > self.rotation_tolerance and \
                 self.jenga_env.simulation_running():
             self._sleep_simtime(0.1)
+            log.debug(f"Actual orientation: {self.get_actual_orientation()}")
+            log.debug(f"Current orientation: {self.get_orientation()}")
+            # log.debug(f"Angle: {math.degrees(get_angle_between_quaternions(self.get_actual_orientation(), self.get_orientation()))}")
+
+            try:
+                actual_orientation = self.get_actual_orientation()
+                orientation = self.get_orientation()
+                condition = math.degrees(get_angle_between_quaternions(actual_orientation,
+                                                                       orientation))
+            except:
+                log.exception(f"Actual orientation: {repr(actual_orientation)}, orientation: {repr(orientation)}")
