@@ -146,7 +146,8 @@ def generate_scene(num_blocks=54,
         <?xml version="1.0" ?>
         <mujoco>
             
-            <size nconmax="3200" njmax="8000"/>    
+            <!-- <size nconmax="3200" njmax="8000"/> -->    
+            <size nconmax="1600" njmax="4000"/>    
             <statistic extent="2" meansize=".05"/>
               
             <default class="main">
