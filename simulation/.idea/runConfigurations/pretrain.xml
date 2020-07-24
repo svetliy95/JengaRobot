@@ -4,7 +4,6 @@
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <envs>
-      <env name="PYTHONUNBUFFERED" value="1" />
       <env name="LD_LIBRARY_PATH" value="$USER_HOME$/.mujoco/mujoco200/bin:/usr/lib/nvidia-000:/usr/lib/x86_64-linux-gnu/libGL.so" />
       <env name="LD_PRELOAD" value="/usr/lib/x86_64-linux-gnu/libGLEW.so:/usr/lib/x86_64-linux-gnu/libGL.so" />
     </envs>
