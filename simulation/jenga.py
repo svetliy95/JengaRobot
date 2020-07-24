@@ -54,8 +54,8 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-log = logging.Logger("file_logger")
-file_formatter = logging.Formatter('%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
+log = logging.Logger(__name__)
+file_formatter = logging.Formatter('%(asctime)s:%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
 file_handler = logging.FileHandler(filename='jenga.log', mode='w')
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.DEBUG)
@@ -950,8 +950,8 @@ class jenga_env(gym.Env):
 
         log.debug(f"Initialization done")
 
-        debug_tower_toppled_time = int(random.random()*10000 + 1)
-        debug_tower_toppled_time = 20000
+        # debug_tower_toppled_time = int(random.random()*10000 + 1)
+        # debug_tower_toppled_time = 10000
 
         # simulation loop
         try:
@@ -975,9 +975,9 @@ class jenga_env(gym.Env):
                         self.toppled_fl = True
                         log.debug(f"Tower toppled!")
 
-                    if self.t == debug_tower_toppled_time:
-                        self.toppled_fl = True
-                        log.debug(f"Fake tower toppled!")
+                    # if self.t == debug_tower_toppled_time:
+                    #     self.toppled_fl = True
+                    #     log.debug(f"Fake tower toppled!")
 
                     # get positions of blocks and plot images
                     if self.t % 100 == 0 and self.render and not self.on_screen_rendering:
@@ -1142,7 +1142,7 @@ class jenga_env_wrapper(gym.Env):
 
     def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue, normalize, seed):
         log.debug(f"Start process")
-        env = jenga_env(render=True, seed=seed)
+        env = jenga_env(render=False, seed=seed)
         log.debug(f"Env created")
         flag = True
         debug_collapse_time = random.random()*30 + 3
@@ -1205,29 +1205,29 @@ class jenga_env_wrapper(gym.Env):
             return res
         except:
             # stop simulation
-            self.process_running_q.put(1)
+            self.process.terminate()
             log.exception("Timeout occurred!")
             obs = self.last_response[0]
             reward = self.last_response[1]
             info = self.last_response[3]
             info['timeout'] = True  # update info
             done = True  # update done
-            print(f"Step #3")
+            log.debug(f"Step #3")
             return obs, reward, done, info
 
     def reset(self):
         log.debug(f"Reset #1")
-        self.process_running_q.put(1)
         if self.process is not None:
+            log.debug(f"Before terminate")
+            self.process.terminate()
+            log.debug(f"After terminate")
             while self.process.is_alive():
                 log.debug('Wait for process exit!')
                 time.sleep(0.1)
-        log.debug(f"Before processor running get")
-        self.process_running_q.get()
-        log.debug(f"After processor running get")
+        log.debug(f"After processor running wait!")
 
         # reset object variables
-        self.__init__(self.normalize)
+        self.__init__(self.normalize, self.seed)
 
         log.debug(f"Before start new process")
         self.start_new_process()
@@ -1240,14 +1240,24 @@ class jenga_env_wrapper(gym.Env):
         return state
 
     def close(self):
+        # log.debug(f"SIM_PID:{self.sim_pid}:Close!")
+        # if self.process.is_alive():
+        #     self.process_running_q.put(1)
+        #     log.debug(f"SIM_PID:{self.sim_pid}:Before wait")
+        #     while self.process.is_alive():
+        #         time.sleep(0.1)
+        #     log.debug(f"SIM_PID:{self.sim_pid}:After wait")
+        #     self.process_running_q.get(timeout=timeout_step)
+        #     log.debug(f"SIM_PID:{self.sim_pid}:After process stopping")
+        # log.debug(f"SIM_PID:{self.sim_pid}:Closed!")
+
         log.debug(f"SIM_PID:{self.sim_pid}:Close!")
         if self.process.is_alive():
-            self.process_running_q.put(1)
+            self.process.terminate()
             log.debug(f"SIM_PID:{self.sim_pid}:Before wait")
             while self.process.is_alive():
                 time.sleep(0.1)
             log.debug(f"SIM_PID:{self.sim_pid}:After wait")
-            self.process_running_q.get(timeout=timeout_step)
             log.debug(f"SIM_PID:{self.sim_pid}:After process stopping")
         log.debug(f"SIM_PID:{self.sim_pid}:Closed!")
 
