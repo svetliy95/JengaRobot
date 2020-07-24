@@ -3,7 +3,7 @@ import numpy as np
 import dt_apriltags
 import math
 from utils.utils import *
-from .transformations import matrix2pose, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
+from .transformations import matrix2pose_ZYX, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix_ZYX, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
 from pyquaternion import Quaternion
 scaler = 50
 one_millimeter = 0.001 * scaler
@@ -53,7 +53,7 @@ def get_camera_pose_matrix_mujoco(image, tag_id, tag_size, tag_pos, camera_param
 
         # rotate coordinate frame in order to align with the MuJoCo coordinate system
         camera_matrix = getRotationMatrix_90_z() @ getRotationMatrix_180_x() @ camera_matrix
-        camera_pose = matrix2pose(camera_matrix)
+        camera_pose = matrix2pose_ZYX(camera_matrix)
 
         # translate coordinate frame to the MuJoCo coordinate system origin
         camera_pose[0:3] *= tag_size
@@ -64,7 +64,7 @@ def get_camera_pose_matrix_mujoco(image, tag_id, tag_size, tag_pos, camera_param
         camera_pose[2] += tag_pos[2]
 
 
-        camera_matrix = pose2matrix(camera_pose)
+        camera_matrix = pose2matrix_ZYX(camera_pose)
 
         # return image if flag is set
 
@@ -187,8 +187,8 @@ def get_block_positions_mujoco(im1, im2, block_ids, target_tag_size, ref_tag_siz
 
         # if both tags are detected
         if left_tag_matrix is not None and right_tag_matrix is not None:
-            right_tag_pose = matrix2pose(right_tag_matrix)
-            left_tag_pose = matrix2pose(left_tag_matrix)
+            right_tag_pose = matrix2pose_ZYX(right_tag_matrix)
+            left_tag_pose = matrix2pose_ZYX(left_tag_matrix)
             block_center = left_tag_pose[:3] + (right_tag_pose[:3] - left_tag_pose[:3])/2
 
             # calculate quaternion
@@ -206,7 +206,7 @@ def get_block_positions_mujoco(im1, im2, block_ids, target_tag_size, ref_tag_siz
         
         elif left_tag_matrix is not None:
             # print(bcolors.WARNING + f"Block #{block_id}: only one tag detected!" + bcolors.ENDC)
-            left_tag_pose = matrix2pose(left_tag_matrix)
+            left_tag_pose = matrix2pose_ZYX(left_tag_matrix)
             tag_quat = Quaternion(matrix=left_tag_matrix)
             tag_normal = tag_quat.rotate(np.array([1, 0, 0]))
             block_center = left_tag_pose[:3] + (tag_normal * block_sizes[0] * 0.5)
@@ -216,7 +216,7 @@ def get_block_positions_mujoco(im1, im2, block_ids, target_tag_size, ref_tag_siz
         
         elif right_tag_matrix is not None:
             # print(bcolors.WARNING + f"Block #{block_id}: only one tag detected!" + bcolors.ENDC)
-            right_tag_pose = matrix2pose(right_tag_matrix)
+            right_tag_pose = matrix2pose_ZYX(right_tag_matrix)
             tag_quat = Quaternion(matrix=right_tag_matrix)
             tag_normal = tag_quat.rotate(np.array([1, 0, 0]))
             block_center = right_tag_pose[:3] - (tag_normal * block_sizes[0] * 0.5)
@@ -291,7 +291,7 @@ def get_camera_pose_matrix(detections, tag_id, tag_size, tag_pos, camera_params)
 
         # rotate coordinate frame in order to align with the MuJoCo coordinate system
         # camera_matrix = getRotationMatrix_90_z() @ getRotationMatrix_180_x() @ camera_matrix
-        camera_pose = matrix2pose(camera_matrix)
+        camera_pose = matrix2pose_ZYX(camera_matrix)
 
         # translate coordinate frame to the MuJoCo coordinate system origin
         camera_pose[0:3] *= tag_size
@@ -302,7 +302,7 @@ def get_camera_pose_matrix(detections, tag_id, tag_size, tag_pos, camera_params)
         camera_pose[2] += tag_pos[2]
 
 
-        camera_matrix = pose2matrix(camera_pose)
+        camera_matrix = pose2matrix_ZYX(camera_pose)
 
         # return image if flag is set
 
@@ -463,8 +463,8 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
 
         # if both tags are detected
         if left_tag_matrix is not None and right_tag_matrix is not None:
-            right_tag_pose = matrix2pose(right_tag_matrix)
-            left_tag_pose = matrix2pose(left_tag_matrix)
+            right_tag_pose = matrix2pose_ZYX(right_tag_matrix)
+            left_tag_pose = matrix2pose_ZYX(left_tag_matrix)
             block_center = left_tag_pose[:3] + (right_tag_pose[:3] - left_tag_pose[:3]) / 2
 
             # calculate quaternion
@@ -487,7 +487,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
             else:
                 tag_matrix = right_tag_matrix
 
-            tag_pose = matrix2pose(tag_matrix)
+            tag_pose = matrix2pose_ZYX(tag_matrix)
             tag_quat = Quaternion(matrix=tag_matrix)
             tag_normal = tag_quat.rotate(np.array([0, 0, 1]))
             block_center = tag_pose[:3] + (tag_normal * block_sizes[block_id]['length'] * 0.5)

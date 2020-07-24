@@ -4,7 +4,7 @@ import numpy as np
 from cv.camera import Camera
 from constants import *
 from cv.block_localization import get_block_positions
-from cv.transformations import matrix2pose
+from cv.transformations import matrix2pose_ZYX
 from threading import Thread
 import time
 from cv.blocks_calibration import *
@@ -202,7 +202,7 @@ def get_shild_pose(tag_id, cam, detector, corrections):
         mtx = poses[tag_id]
 
         # correct pose
-        pos = matrix2pose(mtx)[:3]
+        pos = matrix2pose_ZYX(mtx)[:3]
         quat = Quaternion(matrix=mtx)
         measured_poses = {str(tag_id): {'pos': pos, 'quat': quat}}
         corrected_poses = correct_poses(measured_poses, corrections)
@@ -320,7 +320,7 @@ def get_shild_pose_mujoco(tag_id, im, detector):
         shield_quat = Quaternion(matrix=mtx)
         shield_quat = Quaternion([shield_quat[0], -shield_quat[3], shield_quat[1], -shield_quat[2]])
 
-        temp = matrix2pose(mtx)
+        temp = matrix2pose_ZYX(mtx)
         x = -temp[2]*scaler*2
         y = temp[0]*scaler*2
         z = -temp[1]*scaler*2

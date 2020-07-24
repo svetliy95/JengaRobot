@@ -2,7 +2,37 @@ import numpy as np
 from math import cos, sin, pi, radians
 
 
-def pose2matrix(pose):
+def pose2matrix_XYZ(pose):
+    X = pose[0]
+    Y = pose[1]
+    Z = pose[2]
+    A = pose[3]
+    B = pose[4]
+    C = pose[5]
+
+    T = np.array([[1, 0, 0, X],
+                  [0, 1, 0, Y],
+                  [0, 0, 1, Z],
+                  [0, 0, 0, 1]])
+    Rz = np.array([[cos(C), -sin(C), 0, 0],
+                   [sin(C), cos(C), 0, 0],
+                   [0, 0, 1, 0],
+                   [0, 0, 0, 1]])
+
+    Ry = np.array([[cos(B), 0, sin(B), 0],
+                   [0, 1, 0, 0],
+                   [-sin(B), 0, cos(B), 0],
+                   [0, 0, 0, 1]])
+
+    Rx = np.array([[1, 0, 0, 0],
+                   [0, cos(A), -sin(A), 0],
+                   [0, sin(A), cos(A), 0],
+                   [0, 0, 0, 1]])
+
+    return T @ Rx @ Ry @ Rz
+
+
+def pose2matrix_ZYX(pose):
     X = pose[0]
     Y = pose[1]
     Z = pose[2]
@@ -33,7 +63,7 @@ def pose2matrix(pose):
 
 
 # Ausgabe von Pose in X, Y, Z, Rz, Ry', Rx''
-def matrix2pose(a_matrix):
+def matrix2pose_ZYX(a_matrix):
     l_norm = np.sqrt(np.square(a_matrix[0, 0]) + np.square(a_matrix[1, 0]))
 
     if l_norm > 0.00001:
@@ -52,6 +82,27 @@ def matrix2pose(a_matrix):
             l_WC = -np.arctan2(a_matrix[0, 1], a_matrix[1, 1])
 
     l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WA, l_WB, l_WC])
+    return l_pose
+
+def matrix2pose_XYZ(a_matrix):
+    l_norm = np.sqrt(np.square(a_matrix[0, 0]) + np.square(a_matrix[1, 0]))
+
+    if l_norm > 0.00001:
+        l_sa = a_matrix[1, 0] / l_norm
+        l_ca = a_matrix[0, 0] / l_norm
+        l_WA = np.arctan2(l_sa, l_ca)
+        l_WB = np.arctan2(-a_matrix[2, 0], l_ca * a_matrix[0, 0] + l_sa * a_matrix[1, 0])
+        l_WC = np.arctan2(l_sa * a_matrix[0, 2] - l_ca * a_matrix[1, 2], -l_sa * a_matrix[0, 1] + l_ca * a_matrix[1, 1])
+    else:
+        l_WA = 0
+        l_WB = np.arctan2(-a_matrix[2, 0], l_norm)
+
+        if l_WB > 0:
+            l_WC = np.arctan2(a_matrix[0, 1], a_matrix[1, 1])
+        else:
+            l_WC = -np.arctan2(a_matrix[0, 1], a_matrix[1, 1])
+
+    l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WC, l_WB, l_WA])
     return l_pose
 
 # accepts angle in degrees
@@ -173,7 +224,7 @@ if __name__ == '__main__':
     pose5 = [1250, 3800, 1600, 90 * pi / 180, 0 * pi / 180, -180 * pi / 180]
 
     print(pose5)
-    matrix = pose2matrix(pose5)
+    matrix = pose2matrix_ZYX(pose5)
     print(matrix)
     # r_90_matrix = np.matrix([[1, 0, 0, 0],
     #                              [0, 0, 1, 0],
@@ -182,5 +233,5 @@ if __name__ == '__main__':
     matrix2 = matrix * getDrone2CameraTransformMatrix()
     print(matrix2)
 
-    pose5 = matrix2pose(matrix2)
+    pose5 = matrix2pose_ZYX(matrix2)
     print(pose5)

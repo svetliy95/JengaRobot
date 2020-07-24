@@ -4,7 +4,7 @@ import cv2
 from cv.camera import Camera
 from cv.block_localization import get_tag_poses_from_image
 import dt_apriltags
-from cv.transformations import matrix2pose
+from cv.transformations import matrix2pose_ZYX
 import json
 from os import path
 import csv
@@ -110,7 +110,7 @@ def take_images_and_return_corrections(cam, camera_params, detector):
             if id != ref_tag_id:
                 target_tag_id = id
 
-        measured_positions.append(matrix2pose(mtx[target_tag_id])[:3])
+        measured_positions.append(matrix2pose_ZYX(mtx[target_tag_id])[:3])
         measured_quats.append(Quaternion(matrix=mtx[target_tag_id]))
 
     # average measured positions and quaternions
