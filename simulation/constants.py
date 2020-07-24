@@ -77,7 +77,7 @@ zwischanablage_side_wall_size = np.array([block_width_mean / scaler, 0.001, bloc
 timeout_push = 5
 timeout_pull = 20
 timeout_move = 10
-timeout_step = 30
+timeout_step = 90
 
 # rewards
 reward_extract = 4
@@ -154,3 +154,5 @@ decode_sharpening = 1.0
 buffer_size = 1024
 right_robot_ip = '192.168.10.103'
 right_robot_port = 10002
+left_robot_ip = '192.168.10.101'
+left_robot_port = 10002

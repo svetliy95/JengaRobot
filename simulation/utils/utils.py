@@ -122,7 +122,10 @@ def get_intermediate_rotations(q1: Quaternion, q2: Quaternion, steps):
     return intermediate_quaternions
 
 def angle_between_vectors(a, b):
-    return math.acos(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+    cos = np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    cos = bound(-1, 1, cos)  # bound the value berween -1 and 1, because because of floating point arithmetic the dot
+                             # product can be grater than 1
+    return math.acos(cos)
 
 
 def get_angle_between_quaternions(q1, q2):
@@ -183,3 +186,35 @@ def quat_canonical_form(q):
 # computes diffs in mtx elements in percents
 def mtx_diff(mtx1, mtx2):
     return np.divide((mtx1 - mtx2), mtx1) * 100
+
+def bound(low, high, value):
+    return max(low, min(high, value))
+
+def plane_normal_from_points(p1, p2, p3):
+    v1 = p1 - p2
+    v2 = p3 - p2
+    normal = np.cross(v1, v2)
+
+    # normalize
+    normal = normal / np.linalg.norm(normal)
+
+    return normal
+
+def define_axis(p1, p2, plane_normal):
+    v = p2 - p1
+    axis_vector = proj_on_plane(plane_normal, v)
+
+    # normalize
+    axis_vector = axis_vector / np.linalg.norm(axis_vector)
+
+    return axis_vector
+
+def calculate_rotation(v1, v2):
+    cross_product = np.cross(v1, v2)
+    v1_norm = np.linalg.norm(v1)
+    v2_norm = np.linalg.norm(v2)
+    w = math.sqrt(v1_norm**2 * v2_norm**2) + np.dot(v1, v2)
+
+    quat = Quaternion([w, cross_product[0], cross_product[1], cross_product[2]]).normalised
+
+    return quat
