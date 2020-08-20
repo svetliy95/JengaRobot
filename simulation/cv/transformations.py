@@ -102,7 +102,7 @@ def matrix2pose_XYZ(a_matrix):
         else:
             l_WC = -np.arctan2(a_matrix[0, 1], a_matrix[1, 1])
 
-    l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WC, l_WB, l_WA])
+    l_pose = np.array([a_matrix[0, 3], a_matrix[1, 3], a_matrix[2, 3], l_WA, l_WB, l_WC])
     return l_pose
 
 # accepts angle in degrees

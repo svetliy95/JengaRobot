@@ -2,7 +2,7 @@ import numpy as np
 from constants import *
 from pyquaternion import Quaternion
 from scipy.stats import truncnorm
-from cv.block_localization import get_block_positions_mujoco, get_camera_params_mujoco
+from cv.block_localization import get_block_positions_mujoco, get_camera_params_mujoco, get_block_positions
 import cv2
 import math
 from utils.utils import *
@@ -11,7 +11,7 @@ import logging
 import colorlog
 import copy
 import random
-from mujoco_py import MjRenderContextOffscreen
+# from mujoco_py import MjRenderContextOffscreen
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.
@@ -28,12 +28,12 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.INFO)
 log.addHandler(stream_handler)
 
-log = logging.Logger(__name__)
-file_formatter = logging.Formatter('%(asctime)s:%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
-file_handler = logging.FileHandler(filename='tower.log', mode='w')
-file_handler.setFormatter(file_formatter)
-file_handler.setLevel(logging.DEBUG)
-log.addHandler(file_handler)
+# log = logging.Logger(__name__)
+# file_formatter = logging.Formatter('%(asctime)s:%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
+# file_handler = logging.FileHandler(filename='tower.log', mode='w')
+# file_handler.setFormatter(file_formatter)
+# file_handler.setLevel(logging.DEBUG)
+# log.addHandler(file_handler)
 
 
 class Tower:
@@ -54,21 +54,87 @@ class Tower:
     pos_sigma = (position_error / n_sigma) / math.sqrt(3)
     orientation_sigma = 2/3
 
-    def __init__(self, sim, viewer):
-        log.debug(f"Init #1")
-        self.sim = sim
-        self.viewer = viewer
-        positions = self.get_positions()
-        orientations = self.get_orientations()
-        log.debug(f"Positions: {positions}")
-        log.debug(f"Orientations: {orientations}")
-        self.ref_positions = copy.deepcopy(positions)
-        self.last_ref_positions = copy.deepcopy(positions)
-        self.ref_orientations = copy.deepcopy(orientations)
-        self.last_ref_orientations = copy.deepcopy(orientations)
-        self.toppled_fl = False
-        log.debug(f"Init #2")
+    def __init__(self, sim=None, viewer=None, simulation_fl=True, cam1=None, cam2=None, at_detector=None, block_sizes=None, corrections=None):
 
+        if simulation_fl:
+            log.debug(f"Init #1")
+            self.sim = sim
+            self.viewer = viewer
+            positions = self.get_positions()
+            orientations = self.get_orientations()
+            log.debug(f"Positions: {positions}")
+            log.debug(f"Orientations: {orientations}")
+            self.ref_positions = copy.deepcopy(positions)
+            self.last_ref_positions = copy.deepcopy(positions)
+            self.ref_orientations = copy.deepcopy(orientations)
+            self.last_ref_orientations = copy.deepcopy(orientations)
+            self.toppled_fl = False
+            log.debug(f"Init #2")
+        else:
+
+            # debigging
+            self.image_index = 0
+            ######################
+
+            self.cam1 = cam1
+            self.cam2 = cam2
+            self.at_detector = at_detector
+            self.block_sizes = block_sizes
+            self.corrections = corrections
+            self.target_tag_size = 9.6
+            self.ref_tag_pos = np.array([0, 0, 0])
+            self.ref_tag_id = 255
+            self.ref_tag_size = 56.2
+
+            # initialize flipping corrections
+            self.orientation_corrections = {i: Quaternion([1, 0, 0, 0]) for i in range(g_blocks_max)}
+
+            poses = self.get_poses_cv()
+            positions = self.get_positions_from_poses(poses)
+            orientations = self.get_orientations_from_poses(poses)
+
+            # calculate corrections for the orientations
+            self.calculate_orientation_corrections(orientations)
+
+            # apply corrections
+            for i in range(g_blocks_max):
+                if i in orientations:
+                    orientations[i] *= self.orientation_corrections[i]
+
+            self.ref_positions = copy.deepcopy(positions)
+            self.last_ref_positions = copy.deepcopy(positions)
+            self.ref_orientations = copy.deepcopy(orientations)
+            self.last_ref_orientations = copy.deepcopy(orientations)
+            self.toppled_fl = False
+            self.initial_pos = self.get_center_xy(positions)
+
+
+    def reset_orientations(self, orientations):
+        # calculate corrections for the orientations
+        self.calculate_orientation_corrections(orientations)
+
+    # calculates corrections needed when blocks are flipped over or rotated around z-axis
+    def calculate_orientation_corrections(self, orientations):
+        for i in range(g_blocks_max):
+            correction = self.orientation_corrections[i]
+            if i in orientations:
+                q = orientations[i]
+                angle_x = angle_between_vectors(x_unit_vector, q.rotate(x_unit_vector))
+                angle_x = math.degrees(angle_x)
+                angle_y = angle_between_vectors(y_unit_vector, q.rotate(x_unit_vector))  # this should be x_unit_vector, not y_unit_vector
+                angle_y = math.degrees(angle_y)
+                angle_z = angle_between_vectors(z_unit_vector, q.rotate(z_unit_vector))
+                angle_z = math.degrees(angle_z)
+
+                print(f"Block #{i}: X: {angle_x}, Y: {angle_y}, Z: {angle_z}")
+
+                if abs(angle_x - 180) < flipping_threshold or abs(angle_y - 180) < flipping_threshold:
+                    correction *= Quaternion(axis=z_unit_vector, degrees=180)
+
+                if abs(angle_z - 180) < flipping_threshold:
+                    correction *= Quaternion(axis=x_unit_vector, degrees=180)
+
+            self.orientation_corrections[i] = correction
 
     def get_position(self, num):
         assert num < self.block_num, "Block num is to high"
@@ -121,7 +187,7 @@ class Tower:
         v2 = q2.rotate(x_unit_vector)
         return angle_between_vectors(v1, v2)
 
-    def get_poses_cv(self, ids=[], return_images=True):
+    def get_poses_cv_mujoco(self, ids=[], return_images=True):
         assert set(ids).issubset(set(range(g_blocks_num))), "Wrong block ids!"
         if not ids:
             ids = [i for i in range(g_blocks_num)]
@@ -159,6 +225,45 @@ class Tower:
         else:
             return poses
 
+    def get_poses_cv(self):
+        cam_params1 = self.cam1.get_params()
+        cam_params2 = self.cam2.get_params()
+        im1 = self.cam1.get_raw_image()
+        im2 = self.cam2.get_raw_image()
+        cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im1)
+        self.image_index += 1
+        cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im2)
+        self.image_index += 1
+        block_ids = [i for i in range(54)]
+        poses = get_block_positions(im1, im2, block_ids, self.target_tag_size, self.ref_tag_size, self.ref_tag_id, self.ref_tag_pos,
+                                     self.block_sizes, self.corrections,
+                                     cam_params1, cam_params2, False, self.at_detector, cam1_mtx, cam1_dist, cam2_mtx,
+                                     cam2_dist)
+
+        if poses is not None:
+            for id in poses:
+                block_pos = poses[id]['pos']
+                block_quat = poses[id]['orientation']
+
+                block_pos, block_quat = self.swap_coordinates(block_pos, block_quat)
+                block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0],
+                                                                                               degrees=-90)
+                poses[id]['pos'] = block_pos
+                poses[id]['orientation'] = block_quat * self.orientation_corrections[id]
+
+
+        return poses
+
+    def swap_coordinates(self, pos, quat):
+        quat = Quaternion([quat[0], quat[2], quat[1], -quat[3]])
+        x = pos[1]
+        y = pos[0]
+        z = -pos[2]
+
+        pos = np.array([x, y, z])
+
+        return pos, quat
+
     def get_position_cv(self, num):
         assert num < self.block_num, "Block num is to high"
 
@@ -169,10 +274,18 @@ class Tower:
         else:
             return None
 
+    def get_positions_from_poses(self, poses):
+        positions = {id: poses[id]['pos'] for id in poses}
+        return positions
+
+    def get_orientations_from_poses(self, poses):
+        positions = {id: poses[id]['orientation'] for id in poses}
+        return positions
+
     def get_highest_block_id(self, positions, current_block):
         max_z = 0
         max_block_num = -1
-        for i in range(g_blocks_num):
+        for i in positions:
             if i != current_block:
                 height = positions[i][2]
                 if height > max_z:
@@ -184,7 +297,7 @@ class Tower:
     def get_lowest_block_id(self, positions):
         min_z = np.Inf
         min_block_id = -1
-        for i in range(g_blocks_num):
+        for i in positions:
             height = positions[i][2]
             if height < min_z:
                 min_z = height
@@ -211,11 +324,11 @@ class Tower:
         return orientations
 
     def get_adjacent_blocks(self, id, positions):
-        root_pos = self.get_position(id)
+        root_pos = positions[id]
 
         # search for blocks with the same height within a certain threshold
         adjacent_blocks = []
-        for i in range(g_blocks_num):
+        for i in positions:
             if abs(positions[i][2] - root_pos[2]) < same_height_threshold:
                 adjacent_blocks.append(i)
 
@@ -226,14 +339,15 @@ class Tower:
     # remove blocks that are far from the tower
     def filter_positions(self, positions):
         # TODO: can be implemented more efficiently
+        ids = list(positions.keys())
         start = time.time()
         blocks_within_tower = set()
-        for i in range(g_blocks_num):
-            for j in range(i + 1, g_blocks_num):
-                dist = np.linalg.norm(positions[i] - positions[j])
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                dist = np.linalg.norm(positions[ids[i]] - positions[ids[i]])
                 # log.debug(f"Blocks: [{i}] and [{j}], dist: {dist}, threshold: {block_to_far_threshold}")
                 if dist < block_to_far_threshold:
-                    blocks_within_tower.update([i, j])
+                    blocks_within_tower.update([ids[i], ids[j]])
                     break
         elapsed = time.time() - start
         log.debug(f"Elapsed: {elapsed * 1000:.2f}ms")
@@ -284,28 +398,27 @@ class Tower:
             heights.append(positions[id][2])
         return np.mean(heights)
 
-    def mean_orientation(self, layer):
-        orientations = []
+    def mean_orientation(self, layer, orientations):
+        layer_orientations = []
         for block_id in layer:
-            orientations.append(self.get_orientation(block_id))
-        orientations = np.array(orientations)
-        mean_orientation = Quaternion(np.mean(orientations, axis=0))
+            layer_orientations.append(orientations[block_id])
+        mean_orientation = average_quaternions(layer_orientations)
 
         return mean_orientation
 
-    def get_possible_positions(self, layer, positions):
+    def get_possible_positions(self, layer, positions, orientations, origin):
         mean_layer_height = self.mean_height(layer, positions)
 
         # calculate mean orientation of the blocks on the highest full layer
-        mean_orientation = self.mean_orientation(layer)
+        mean_orientation = self.mean_orientation(layer, orientations)
 
         # log.debug(f"Mean orientation: {mean_orientation}")
         # log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
 
         # calculate center of the tower
         tower_center = self.get_center_xy(positions)
-        tower_center_with_height = np.concatenate(
-            (tower_center, np.array([mean_layer_height])))
+        tower_center_with_height = tower_center
+        tower_center_with_height[2] = mean_layer_height
 
         # calculate centers for each position
         offset_orientation = mean_orientation * Quaternion(axis=z_unit_vector, degrees=90)
@@ -315,9 +428,7 @@ class Tower:
         offset_vector = offset_orientation.rotate(x_unit_vector)
         offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
                                                                      p=tower_center_with_height,
-                                                                     origin=np.array([coordinate_axes_pos_x,
-                                                                                      coordinate_axes_pos_y,
-                                                                                      coordinate_axes_pos_z]))
+                                                                     origin=origin)
         pos1 = tower_center_with_height + (block_width_max * offset_direction)
         pos2 = tower_center_with_height
         pos3 = tower_center_with_height - (block_width_max * offset_direction)
@@ -325,13 +436,18 @@ class Tower:
 
         return possible_positions
 
-    def get_layers_state(self, positions):
+    def get_layers_state(self, positions, orientations, origin):
         layers = self.get_layers(positions)
         layers_state = {}
 
+        print(f"Layers: {layers}")
+
         for i in range(len(layers)):
-            possible_positions = self.get_possible_positions(layers[i], positions)
+
+
+            possible_positions = self.get_possible_positions(layers[i], positions, orientations, origin)
             occupied_positions = self._assign_pos(layers[i], possible_positions, positions)
+
             layers_state[i] = {0: occupied_positions[0] if 0 in occupied_positions else None,
                                1: occupied_positions[1] if 1 in occupied_positions else None,
                                2: occupied_positions[2] if 2 in occupied_positions else None}
@@ -354,7 +470,7 @@ class Tower:
                 x.append(positions[id][0])
                 y.append(positions[id][1])
         log.debug(f"Tower center: {np.array([np.mean(x), np.mean(y)])}")
-        return np.array([np.mean(x), np.mean(y)])
+        return np.array([np.mean(x), np.mean(y), 0])
 
     def get_highest_layer(self, positions, current_block):
         return self.get_adjacent_blocks(self.get_highest_block_id(positions, current_block), positions)
@@ -364,7 +480,7 @@ class Tower:
         highest_layer = None
         full_layers = self.get_full_layers(positions)
         for layer in full_layers:
-            z = self.get_position(layer[0])[2]
+            z = positions[layer[0]][2]
             if z > max_z:
                 highest_layer = layer
                 max_z = z
@@ -397,7 +513,7 @@ class Tower:
 
         return occupied_positions
 
-    def get_placing_pose(self, positions, current_block):
+    def get_placing_pose_mujoco(self, positions, orientations, current_block):
         # There are 3 cases:
         # 1. 3 blocks in the highest layer
         # 2. 2 blocks in the highest layer
@@ -413,17 +529,17 @@ class Tower:
             highest_full_layer = self.get_highest_full_layer(positions)
             z = []
             for i in range(3):
-                z.append(self.get_position(highest_full_layer[i])[2])
+                z.append(positions[highest_full_layer[i]][2])
             highest_full_layer_height = np.mean(z)
 
             # calculate mean orientation of the blocks on the highest full layer
-            orientations = []
+            layer_orientations = []
             for block_id in highest_full_layer:
-                orientations.append(self.get_orientation(block_id))
-            orientations = np.array(orientations)
-            mean_orientation = Quaternion(np.mean(orientations, axis=0))  # get the mean orientation of the top blocks
+                layer_orientations.append(orientations[block_id])
+            layer_orientations = np.array(layer_orientations)
+            mean_orientation = Quaternion(np.mean(layer_orientations, axis=0))  # get the mean orientation of the top blocks
 
-            log.debug(f"Orientations: {orientations}")
+            log.debug(f"Orientations: {layer_orientations}")
             log.debug(f"Mean orientation: {mean_orientation}")
             log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
 
@@ -578,11 +694,190 @@ class Tower:
                     'stopover': stopover,
                     'num_of_blocks': num_of_blocks}
         except:
+            log.exception(f"Exception!")
+            log.debug(f"Privet!")
             self.toppled_fl = True
             return {'pos': np.array([0, 0, 0]),
                     'pos_with_tolerance': np.array([0, 0, 0]),
                     'orientation': Quaternion([1, 0, 0, 0]),
                     'stopover': np.array([0, 0, 0]),
+                    'num_of_blocks': 0}
+
+    def get_placing_pose(self, positions, orientations, current_block):
+        # There are 3 cases:
+        # 1. 3 blocks in the highest layer
+        # 2. 2 blocks in the highest layer
+        # 3. 1 block in the highest layer
+        # And three possible positions for blocks
+        # Position 1: offset in the direction of the origin
+        # Position 2: central position
+        # Position 3: offset in the direction away from the origin
+
+
+        try:
+            # calculate highest full layer mean height
+            highest_full_layer = self.get_highest_full_layer(positions)
+            z = []
+            for i in range(3):
+                z.append(positions[highest_full_layer[i]][2])
+            highest_full_layer_height = np.mean(z)
+
+            # calculate mean orientation of the blocks on the highest full layer
+            layer_orientations = []
+            for block_id in highest_full_layer:
+                layer_orientations.append(orientations[block_id])
+            layer_orientations = np.array(layer_orientations)
+            mean_orientation = Quaternion(np.mean(layer_orientations, axis=0))  # get the mean orientation of the top blocks
+
+            log.debug(f"Orientations: {layer_orientations}")
+            log.debug(f"Mean orientation: {mean_orientation}")
+            log.debug(f"Mean orientation ypr: {mean_orientation.yaw_pitch_roll}")
+
+            # calculate center of the tower
+            tower_center = self.get_center_xy(positions)
+            tower_center_with_height = tower_center
+            tower_center_with_height[2] = highest_full_layer_height + block_height_max
+
+
+            # calculate centers for each position
+            offset_orientation = mean_orientation
+
+            print(f"Offset_orientation: {offset_orientation.yaw_pitch_roll}")
+
+            offset_vector = offset_orientation.rotate(x_unit_vector)
+            offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                         p=tower_center_with_height,
+                                                                         origin=origin)
+            pos1 = tower_center_with_height + (block_width_max * offset_direction)
+            pos2 = tower_center_with_height
+            pos3 = tower_center_with_height - (block_width_max * offset_direction)
+            possible_positions = [pos1, pos2, pos3]
+
+            # get the highest (not necessary full) layer
+            highest_layer = self.get_highest_layer(positions, current_block)
+
+            # get occupied positions
+            occupied_positions = self._assign_pos(highest_layer, possible_positions, positions)
+
+            # get stopover
+            stopover = tower_center_with_height - \
+                       offset_direction * (block_width_max * 3) + \
+                       Tower.placing_vert_spacing
+            log.debug(f"Stopover: {stopover}")
+
+            # case 1: place the block on the side near the origin perpendicular to the last 3 blocks
+            if len(highest_layer) == 3:
+                # block orientation must be perpendicular to the top blocks
+                block_orientation = mean_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+
+                # calculate pos
+                temp_vector = mean_orientation.rotate(x_unit_vector)
+                offset_direction = get_direction_towards_origin_along_vector(vec=temp_vector,
+                                                                             p=tower_center_with_height,
+                                                                             origin=origin)
+
+                placing_pos = tower_center_with_height + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                placing_pos_with_tolerance = placing_pos + z_unit_vector * Tower.placing_vert_spacing
+
+            # case 2: we consider only the cases where the two blocks are lying near each other
+            # the case where the blocks are lying on the sides of the tower is not considered
+            if len(highest_layer) == 2:
+
+                # find position, where to place
+                if 0 in occupied_positions and 1 in occupied_positions:
+                    central_block_position = positions[occupied_positions[1]]
+                    central_block_orientation = Quaternion(orientations[occupied_positions[1]])
+                    offset_orientation = central_block_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+                    offset_vector = offset_orientation.rotate(x_unit_vector)
+                    offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                             p=central_block_position,
+                                                                             origin=origin)
+
+                    placing_pos = central_block_position - block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                    placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
+
+                    block_orientation = central_block_orientation
+
+                if 1 in occupied_positions and 2 in occupied_positions:
+                    central_block_position = positions[occupied_positions[1]]
+                    central_block_orientation = Quaternion(orientations[occupied_positions[1]])
+                    offset_orientation = central_block_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+                    offset_vector = offset_orientation.rotate(x_unit_vector)
+                    offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                                 p=central_block_position,
+                                                                                 origin=origin)
+                    placing_pos = central_block_position + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                    placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
+
+                    block_orientation = central_block_orientation
+
+                if 0 in occupied_positions and 2 in occupied_positions:
+                    log.error("Stupid blocks placing!")
+
+            # Case 3
+            if len(highest_layer) == 1:
+                if 0 in occupied_positions:
+                    block0_pos = positions[occupied_positions[0]]
+                    block0_orientation = Quaternion(orientations[occupied_positions[0]])
+                    offset_orientation = block0_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+                    offset_vector = offset_orientation.rotate(x_unit_vector)
+                    offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                                 p=block0_pos,
+                                                                                 origin=origin)
+
+                    placing_pos = block0_pos - block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                    placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
+
+                    block_orientation = block0_orientation
+
+                if 1 in occupied_positions:
+                    block1_pos = positions[occupied_positions[1]]
+                    block1_orientation = Quaternion(orientations[occupied_positions[1]])
+                    offset_orientation = block1_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+                    offset_vector = offset_orientation.rotate(x_unit_vector)
+                    offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                                 p=block1_pos,
+                                                                                 origin=origin)
+
+                    placing_pos = block1_pos + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                    placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
+
+                    block_orientation = block1_orientation
+
+                if 2 in occupied_positions:
+                    block2_pos = positions[occupied_positions[2]]
+                    block2_orientation = Quaternion(orientations[occupied_positions[2]])
+                    offset_orientation = block2_orientation * Quaternion(axis=[0, 0, 1], degrees=90)
+                    offset_vector = offset_orientation.rotate(x_unit_vector)
+                    offset_direction = get_direction_towards_origin_along_vector(vec=offset_vector,
+                                                                                 p=block2_pos,
+                                                                                 origin=origin)
+
+                    placing_pos = block2_pos + block_width_max * offset_direction + z_unit_vector * Tower.placing_vert_spacing
+                    placing_pos_with_tolerance = placing_pos + offset_direction * Tower.placing_horiz_spacing + z_unit_vector * Tower.placing_vert_spacing
+
+                    block_orientation = block2_orientation
+
+            num_of_blocks = len(highest_layer)
+
+            log.debug(f"Occupied positions: {occupied_positions}")
+            log.debug(f"Highest layer: {highest_layer}")
+            log.debug(f"Highest full layer: {highest_full_layer}")
+            log.debug(f"Placing pos: {placing_pos}")
+
+            return {'pos': placing_pos,
+                    'pos_with_tolerance': placing_pos_with_tolerance,
+                    'orientation': block_orientation,
+                    'stopover': stopover,
+                    'num_of_blocks': num_of_blocks}
+        except:
+            log.exception(f"Exception!")
+            log.debug(f"Privet!")
+            self.toppled_fl = True
+            return {'pos': right_robot_home_position_world[:3],
+                    'pos_with_tolerance': right_robot_home_position_world[:3],
+                    'orientation': Quaternion([1, 0, 0, 0]),
+                    'stopover': right_robot_home_position_world[:3],
                     'num_of_blocks': 0}
 
     def get_angle_to_ground(self, num):
@@ -677,13 +972,13 @@ class Tower:
 
         return angle
 
-    def get_tilt_2ax(self, positions, current_block):
+    def get_tilt_2ax(self, positions, orientations, current_block):
         # calculate 2 tilt directions
         lowest_layer = self.get_lowest_layer(positions)
         x = []
         y = []
         for id in lowest_layer:
-            orientation = Quaternion(self.get_orientation(id))
+            orientation = Quaternion(orientations[id])
             x.append(orientation.rotate(x_unit_vector))
             y.append(orientation.rotate(y_unit_vector))
         x_axis_base = self.mean_vector(x)
@@ -696,7 +991,7 @@ class Tower:
         y = []
 
         for id in highest_layer:
-            orientation = Quaternion(self.get_orientation(id))
+            orientation = Quaternion(orientations[id])
             x.append(orientation.rotate(x_unit_vector))
             y.append(orientation.rotate(y_unit_vector))
 
@@ -724,9 +1019,9 @@ class Tower:
 
         return np.array([angle_1, angle_2])
 
-    def _get_displacement_2ax(self, current_block, ref_pos, positions):
+    def _get_displacement_2ax(self, current_block, ref_pos, positions, orientations):
         displacements = []  # a list of displacement vectors
-        for i in range(g_blocks_num):
+        for i in positions:
             if i != current_block:
                 displacements.append(positions[i] - ref_pos[i])
 
@@ -743,7 +1038,7 @@ class Tower:
         x = []
         y = []
         for id in lowest_layer:
-            orientation = Quaternion(self.get_orientation(id))
+            orientation = Quaternion(orientations[id])
             x.append(orientation.rotate(x_unit_vector))
             y.append(orientation.rotate(y_unit_vector))
         x_axis_base = self.mean_vector(x)
@@ -763,25 +1058,24 @@ class Tower:
 
         return np.array([displacement_x, displacement_y]) / one_millimeter
 
-    def _get_displacement_1ax(self, current_block, ref_pos, positions):
-        return np.linalg.norm(self._get_displacement_2ax(current_block, ref_pos, positions))
+    def _get_displacement_1ax(self, current_block, ref_pos, positions, orientations):
+        return np.linalg.norm(self._get_displacement_2ax(current_block, ref_pos, positions, orientations))
 
-    def get_last_displacement_2ax(self, current_block, positions):
-        return self._get_displacement_2ax(current_block, self.last_ref_positions, positions)
+    def get_last_displacement_2ax(self, current_block, positions, orientations):
+        return self._get_displacement_2ax(current_block, self.last_ref_positions, positions, orientations)
 
-    def get_last_displacement_1ax(self, current_block, positions):
-        return self._get_displacement_1ax(current_block, self.last_ref_positions, positions)
+    def get_last_displacement_1ax(self, current_block, positions, orientations):
+        return self._get_displacement_1ax(current_block, self.last_ref_positions, positions, orientations)
 
-    def get_abs_displacement_2ax(self, current_block, positions):
-        return self._get_displacement_2ax(current_block, self.ref_positions, positions)
+    def get_abs_displacement_2ax(self, current_block, positions, orientations):
+        return self._get_displacement_2ax(current_block, self.ref_positions, positions, orientations)
 
-    def get_abs_displacement_1ax(self, current_block, positions):
-        return self._get_displacement_1ax(current_block, self.ref_positions, positions)
+    def get_abs_displacement_1ax(self, current_block, positions, orientations):
+        return self._get_displacement_1ax(current_block, self.ref_positions, positions, orientations)
 
-    def _get_z_rotation(self, current_block, ref_orientations):
-        actual_orientations = self.get_orientations()
+    def _get_z_rotation(self, current_block, actual_orientations, ref_orientations):
         angles = []
-        for i in range(g_blocks_num):
+        for i in actual_orientations:
             if i != current_block:
                 q_ref = Quaternion(ref_orientations[i])
                 x_ref = q_ref.rotate(x_unit_vector)
@@ -794,11 +1088,11 @@ class Tower:
     def get_total_z_rotation(self, current_block):
         return self._get_z_rotation(current_block, self.ref_orientations)
 
-    def get_last_z_rotation(self, current_block):
-        return self._get_z_rotation(current_block, self.last_ref_orientations)
+    def get_last_z_rotation(self, current_block, current_orientations):
+        return self._get_z_rotation(current_block, current_orientations, self.last_ref_orientations)
 
-    def get_block_id_from_pos(self, lvl, pos, positions):
-        layers = self.get_layers_state(positions)
+    def get_block_id_from_pos(self, lvl, pos, positions, orientations, origin):
+        layers = self.get_layers_state(positions, orientations, origin)
         if lvl in layers:  # if any blocks of this level exist
             if pos in layers[lvl]:
                 return layers[lvl][pos]

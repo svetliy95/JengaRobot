@@ -4,6 +4,7 @@ from pyquaternion import Quaternion
 from constants import *
 import traceback
 from scipy import stats
+from averaging_quaternions.averageQuaternions import averageQuaternions
 
 
 def point_projection_on_line(line_point1, line_point2, point):
@@ -218,3 +219,71 @@ def calculate_rotation(v1, v2):
     quat = Quaternion([w, cross_product[0], cross_product[1], cross_product[2]]).normalised
 
     return quat
+
+
+def average_quaternions(list_of_quats):
+    elements = []
+    for q in list_of_quats:
+        elements.append(np.reshape(q.q, (1, 4)))
+    elements = tuple(elements)
+    Q = np.concatenate(elements, axis=0)
+    return Quaternion(averageQuaternions(Q))
+
+
+def get_cam_params_from_matrix(mtx):
+    return mtx[0][0], mtx[1][1], mtx[0][2], mtx[1][2]
+
+# order: XYZ
+def quat2euler(quat):
+    q0 = quat.q[0]
+    q1 = quat.q[1]
+    q2 = quat.q[2]
+    q3 = quat.q[3]
+    phi = math.atan2(2*(q0*q1 + q2*q3), 1 - 2*(q1**2 + q2**2))
+    tau = math.asin(2*(q0*q2 - q3*q1))
+    psi = math.atan2(2*(q0*q3 + q1*q2), 1 - 2*(q2**2 + q3**2))
+
+    return np.array([phi, tau, psi])
+
+def quat_to_euler2(quat: Quaternion):
+    from cv.transformations import matrix2pose_ZYX
+    pose = matrix2pose_ZYX(quat.transformation_matrix)
+    return pose[:-4:-1]
+
+def euler2quat(euler, degrees):
+    assert len(euler) == 3, "Should be a 3d vector!"
+    if degrees:
+        euler = euler / 180 * math.pi
+
+    a = euler[0]
+    b = euler[1]
+    c = euler[2]
+    quat = Quaternion(axis=z_unit_vector, radians=c) * \
+           Quaternion(axis=y_unit_vector, radians=b) * \
+           Quaternion(axis=x_unit_vector, radians=a)
+    return quat
+
+class Line:
+    def __init__(self, p1, p2):
+        # swap points if needed
+        if p1[0] > p2[0]:
+            p1, p2 = p2, p1
+
+        self.a = (p2[1] - p1[1]) / (p2[0] - p1[0])
+        self.b = p1[1] - self.a * p1[0]
+
+    def f(self, x):
+        return self.a * x + self.b
+
+
+if __name__ == '__main__':
+    l = Line((3, 5), (8, 7))
+    x = 3
+    print(f"f({x}) = {l.f(x)}")
+    x = 8
+    print(f"f({x}) = {l.f(x)}")
+    x = 0
+    print(f"f({x}) = {l.f(x)}")
+    x = -9.5
+    print(f"f({x}) = {l.f(x)}")
+

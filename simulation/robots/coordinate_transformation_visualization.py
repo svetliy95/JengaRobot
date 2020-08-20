@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
     # coord system
     coord_system_pos = np.array([100, 100, 0]) * scaler
-    coord_system_euler = np.array([-13, 42, 75])
+    coord_system_euler = np.array([0, 0, 0])
     cs_quat = Quaternion(axis=x_unit_vector, degrees=coord_system_euler[0]) * \
                    Quaternion(axis=y_unit_vector, degrees=coord_system_euler[1]) * \
                    Quaternion(axis=z_unit_vector, degrees=coord_system_euler[2])
@@ -141,7 +141,7 @@ if __name__ == '__main__':
 
     # initialize gripper
     gripper_pos = np.array([200, 200, 10]) * scaler
-    gripper_euler_degrees = np.array([0, 0, 0])
+    gripper_euler_degrees = np.array([0, 0, 112])
     gripper_quat = Quaternion(axis=x_unit_vector, degrees=gripper_euler_degrees[0]) * \
                    Quaternion(axis=y_unit_vector, degrees=gripper_euler_degrees[1]) * \
                    Quaternion(axis=z_unit_vector, degrees=gripper_euler_degrees[2])
@@ -159,7 +159,7 @@ if __name__ == '__main__':
     gripper_mtx = cs.get_transformation_mtx() @ gripper_mtx
 
     # flip gripper
-    gripper_mtx = gripper_mtx @ get_Rz_h(180, 'degrees')
+    gripper_mtx = gripper_mtx @ get_Rx_h(180, 'degrees')
 
     print(f"Gripper mtx #2:\n {gripper_mtx}")
     gripper_pose = matrix2pose_XYZ(gripper_mtx)
@@ -198,6 +198,13 @@ if __name__ == '__main__':
     viewer._run_speed = 16
     viewer.cam.distance = 3
     t = 0
+
+    gripper_pos = np.array([33.838, 178.793, 51.164]) * scaler
+    gripper_quat = Quaternion(-0.6503492807611226, -0.377700478998655, -0.0013060433942600391, -0.6590800068491907)
+    # gripper_pos = np.array([33.838, 178.793, 51.164]) * scaler
+    # gripper_quat = Quaternion(-0.6503492807611226, -0.0013060433942600391, -0.377700478998655, 0.6590800068491907)
+
+    gripper_quat = Quaternion(axis=x_unit_vector, degrees=90) * gripper_quat
 
     # simulate
     while True:

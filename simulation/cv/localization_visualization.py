@@ -153,7 +153,7 @@ def generate_scene_with_cali(scaler, cali_pos, shield_pose, cali_fl: bool):
             <material name="mat_shield_front" texture="tex_shield_front"/>
             <texture name="tex_shield_back" type="cube" fileleft="/home/bch_svt/cartpole/simulation/cv/textures/shield_left.png"/>
             <material name="mat_shield_back" texture="tex_shield_back"/>
-            <texture name="tex_block_top" type="cube" fileup="/home/bch_svt/cartpole/simulation/cv/textures/top.png"/>
+            <texture name="tex_block_top" type="cube" fileup="/home/bch_svt/cartpole/simulation/cv/textures/top.png" filedown="/home/bch_svt/cartpole/simulation/cv/textures/top.png"/>
             <material name="mat_block_top" texture="tex_block_top"/>
             <texture name="tex_cali" type="cube" fileright="/home/bch_svt/cartpole/simulation/images/cali_tag.png"/>
             <material name="mat_cali" texture="tex_cali"/>
@@ -276,7 +276,7 @@ def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
 
                 if not cali_fl:
                     block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
-                # print(f"Block#{id} quat: {block_quat}")
+                print(f"Block#{id} quat: {repr(block_quat)}")
 
                 sim.data.set_mocap_pos(f'block_{id}', block_pos + tag_height)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
@@ -384,7 +384,6 @@ def swap_coordinates_cali(pos, quat):
 
 def swap_coordinates_normal(pos, quat):
     quat = Quaternion([quat[0], quat[2], quat[1], -quat[3]])
-    quat = Quaternion(quat)
     x = pos[1] * scaler
     y = pos[0] * scaler
     z = -pos[2] * scaler
@@ -403,7 +402,7 @@ if __name__ == '__main__':
         ref_tag_size = 40
     else:
         ref_tag_id = 255
-        ref_tag_size = 50  # big: 59.3
+        ref_tag_size = 56.2  # big: 59.3 small: 50 fixed: 56.2
 
     # declare global variable
     scaler = 0.01
@@ -422,8 +421,8 @@ if __name__ == '__main__':
     # cam = Camera(cam1_serial, cam1_mtx_11cm, cam1_dist_11cm)
     cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
     cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
-    cam1.start_grabbing()
-    cam2.start_grabbing()
+    # cam1.start_grabbing()
+    # cam2.start_grabbing()
     detector = dt_apriltags.Detector(nthreads=detection_threads,
                                      quad_decimate=quad_decimate,
                                      quad_sigma=quad_sigma,

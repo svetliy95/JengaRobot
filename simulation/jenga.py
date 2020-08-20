@@ -384,15 +384,15 @@ class jenga_env(gym.Env):
 
         try:
             if key.char == '5':
-                Thread(target=self.pusher.move_to_block, args=(5,)).start()
+                Thread(target=self.pusher.move_to_block_push, args=(5,)).start()
             if key.char == '6':
-                Thread(target=self.pusher.move_to_block, args=(6,)).start()
+                Thread(target=self.pusher.move_to_block_push, args=(6,)).start()
             if key.char == '7':
-                Thread(target=self.pusher.move_to_block, args=(7,)).start()
+                Thread(target=self.pusher.move_to_block_push, args=(7,)).start()
             if key.char == '8':
-                Thread(target=self.pusher.move_to_block, args=(8,)).start()
+                Thread(target=self.pusher.move_to_block_push, args=(8,)).start()
             if key.char == '9':
-                Thread(target=self.pusher.move_to_block, args=(9,)).start()
+                Thread(target=self.pusher.move_to_block_push, args=(9,)).start()
             if key.char == '+':
                 self.extractor.move_in_direction('up')
             if key.char == '-':
@@ -493,12 +493,13 @@ class jenga_env(gym.Env):
     def move_to_block(self, lvl, pos):
         log.debug(f"Before get positions")
         positions = self.tower.get_positions()
+        orientations = self.tower.get_orientations()
         log.debug(f"After get positions")
-        block_id = self.tower.get_block_id_from_pos(lvl, pos, positions)
+        block_id = self.tower.get_block_id_from_pos(lvl, pos, positions, orientations)
         log.debug(f"After get block id from pos")
         if block_id is not None:
             log.debug(f"Before pusher move to block")
-            self.pusher.move_to_block(block_id)
+            self.pusher.move_to_block_push(block_id)
             log.debug(f"After pusher move to block")
             self.current_block_id = block_id
         else:
@@ -582,6 +583,7 @@ class jenga_env(gym.Env):
             # get block positions
             log.debug(f"Before get positions")
             block_positions = self.tower.get_positions()
+            block_orientations = self.tower.get_orientations()
             log.debug(f"After get positions")
 
             # calculate tilt
@@ -623,7 +625,7 @@ class jenga_env(gym.Env):
             # 3) x□□
             # 4) x□x
             log.debug(f"Before get layers state")
-            layers = self.tower.get_layers_state(block_positions)
+            layers = self.tower.get_layers_state(block_positions, block_orientations)
             log.debug(f"After get layers state")
             current_layer = layers[self.current_lvl]
             print(f"Current layer: {current_layer}")
@@ -1024,7 +1026,7 @@ class jenga_env(gym.Env):
 
 def check_all_blocks(simulation):
     start_time = time.time()
-    simulation.move_to_block(0, 0)
+    simulation.move_to_block_push(0, 0)
     time.sleep(1)
     loose_blocks = []
     force_threshold = 240000 * 0.4
@@ -1071,7 +1073,7 @@ def check_all_blocks(simulation):
 
         log.debug(f"Extracted blocks: {loose_blocks}")
 
-        simulation.move_to_block((i + 1) // 3, (i + 1) % 3)
+        simulation.move_to_block_push((i + 1) // 3, (i + 1) % 3)
         time.sleep(1)
 
     error = None
@@ -1142,7 +1144,7 @@ class jenga_env_wrapper(gym.Env):
 
     def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue, normalize, seed):
         log.debug(f"Start process")
-        env = jenga_env(render=False, seed=seed)
+        env = jenga_env(render=True, seed=seed)
         log.debug(f"Env created")
         flag = True
         debug_collapse_time = random.random()*30 + 3

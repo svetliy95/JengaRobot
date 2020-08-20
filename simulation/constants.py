@@ -5,8 +5,12 @@ from pyquaternion import Quaternion
 g_timestep = 0.005
 
 # tower
-g_blocks_num = 30
-scaler = 50
+g_blocks_num = 18
+g_blocks_max = 54
+flipping_threshold = 30  # in degrees
+# scaler = 50
+# one_millimeter = 0.001 * scaler
+scaler = 1000
 one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
@@ -142,10 +146,21 @@ cam2_mtx = np.array([[2.10038867e+03, 0.00000000e+00, 1.59039780e+03],
        [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 cam2_dist = np.array([[-0.00600466,  0.02840844,  0.00043355,  0.00111766, -0.04208812]])
 
+phone_cam_mtx = np.array([[934.42689912, 0., 637.96645563],
+       [0., 934.56635613, 491.63680933],
+       [0., 0., 1.]])
+phone_cam_dist = np.array([[0.16284682, -0.69159724,  0.00360451,  0.00146134,  0.82432896]])
+
+# full size image
+phone_cam_mtx = np.array([[2.91991255e+03, 0.00000000e+00, 2.01644404e+03],
+       [0.00000000e+00, 2.91841106e+03, 1.53419836e+03],
+       [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+phone_cam_dist = np.array([[ 0.11169081, -0.42087882,  0.00243412,  0.00184474,  0.41748723]])
+
 # tags detection
 detection_method = 'apriltag'  # 'apriltag' or 'aruco'
 detection_threads = 8
-quad_decimate = 2
+quad_decimate = 1
 quad_sigma = 1.3
 decode_sharpening = 1.0
 
@@ -154,5 +169,29 @@ decode_sharpening = 1.0
 buffer_size = 1024
 right_robot_ip = '192.168.10.103'
 right_robot_port = 10002
+right_gripper_ip = '192.168.10.2'
 left_robot_ip = '192.168.10.101'
 left_robot_port = 10002
+left_gripper_ip = '192.168.10.1'
+real_tag_pos = np.array([0, 0, 0])
+right_robot_home_position_world = np.array([158.613, -156.59, 95.871, 0.0, 0.0, 135])
+right_robot_home_position_world = np.array([78.632, -19.887, 300, 0, 0, -45])
+zwischenablage_place_pose = np.array([298.443, 88.613, 76.435, 34.864, -29.77 , -12.606])
+zwischenablage_place_pos = np.array([298.443, 88.613, 76.435])
+zwischenablage_place_quat = Quaternion(0.9249325768880927, 0.2608642425642888, -0.2753860975559344, -0.024740097724662957)
+zwischenablage_take_pose = np.array([257.94 ,  90.479,  54.222, -35.076, -30.15 , 100.069])
+zwischenablage_take_pos = zwischenablage_take_pose[:3]
+zwischenablage_take_quat = Quaternion(0.6514593292525659, 0.0031738377130947626, -0.3823000037465868, 0.6553147153996525)  # euler2quat(zwischenablage_take_pose[3:], degrees=True)
+right_robot_spring_constant = 0.075  # N/mm
+
+# play
+loose_block_height_threshold = 0.05  # in mm
+
+
+
+
+# right_robot_home_position_world = np.array([218.737, -216.677, 95.866, 0.0, 0.0, 135])
+right_robot_taster_offset = -67  # in mm
+stopover_height = 300
+
+read_force_wait = 1.0  # seconds

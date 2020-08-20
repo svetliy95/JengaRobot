@@ -48,9 +48,11 @@ class Camera:
 
     @staticmethod
     def calibrate(fnames):
+        not_found = []
 
         # Defining the dimensions of checkerboard
         CHECKERBOARD = (12, 23)
+        # CHECKERBOARD = (5, 8)
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
         # Creating vector to store vectors of 3D points for each checkerboard image
@@ -91,6 +93,7 @@ class Camera:
                 # Draw and display the corners
                 img = cv2.drawChessboardCorners(img, CHECKERBOARD, corners2, ret)
             else:
+                not_found.append(fname)
                 print(f"Checkerboard not found!")
 
             # cv2.namedWindow('img', cv2.WINDOW_NORMAL)
@@ -129,6 +132,9 @@ class Camera:
         print(rvecs)
         print("tvecs : \n")
         print(tvecs)
+
+        for f in not_found:
+            print(f"Not found: {f}")
 
         return mtx, dist
 
@@ -172,13 +178,15 @@ class Camera:
         self.camera.StopGrabbing()
 
     def get_raw_image(self):
-        if not self.camera.IsGrabbing():
-            return
+        # if not self.camera.IsGrabbing():
+        #     return
+        #
+        # grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+        # img = grabResult.GetArray()
+        #
+        # return img
 
-        grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-        img = grabResult.GetArray()
-
-        return img
+        return self.take_raw_picture()
 
     def get_undistorted_image(self):
         img = self.get_raw_image()
@@ -200,7 +208,7 @@ class Camera:
         return image
 
 if __name__ == '__main__':
-    fnames = glob.glob('./cam2_calibration/*.bmp')
+    fnames = glob.glob('./pictures/phone_calibration/*.jpg')
     mtx, dist = Camera.calibrate(fnames)
     # mtx_diff = np.divide(abs(mtx-cam1_mtx_11cm_2), mtx) * 100
     # dist_diff = np.divide(abs(dist-cam1_dist_11cm_2), dist) * 100
@@ -208,6 +216,12 @@ if __name__ == '__main__':
     # print(dist_diff)
     print(repr(mtx))
     print(repr(dist))
+
+    img = cv2.imread(f"./pictures/phone_calibration/old_but_gold/photo_2020-08-12_13-58-47.jpg")
+    img = cv2.undistort(img, phone_cam_mtx, phone_cam_dist)
+    cv2.namedWindow('img', cv2.WINDOW_NORMAL)
+    cv2.imshow('img', img)
+    cv2.waitKey(0)
     # cam = Camera('22917552', mtx, dist)
     # im = cam.take_picture()
     # print(f"Shape: {im.shape}")

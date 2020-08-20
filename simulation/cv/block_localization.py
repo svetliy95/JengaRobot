@@ -3,7 +3,7 @@ import numpy as np
 import dt_apriltags
 import math
 from utils.utils import *
-from .transformations import matrix2pose_ZYX, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix_ZYX, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
+from cv.transformations import matrix2pose_ZYX, getRotationMatrix_180_x, getRotationMatrix_90_z, pose2matrix_ZYX, get_Ry_h, get_Rx_h, get_Ry, get_Rz_h, get_Rx, get_Rz
 from pyquaternion import Quaternion
 scaler = 50
 one_millimeter = 0.001 * scaler
@@ -316,7 +316,6 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
     assert ref_tag_pos.size == 3, "tag_pos_ref must be a 3d vector"
 
     # detect
-    # detections = detector.detect(img, True, camera_params, tag_size=1)
     if detection_method == 'apriltag':
         detections = detect_with_apriltag(img, camera_params, detector, cam_mtx, cam_dist)
     elif detection_method == 'aruco':
@@ -348,7 +347,7 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
         tag_id = int(tag_id)
         block_matrix = block_matrices[tag_id]
 
-        # scale translation in order to convert into MuJoCo units
+        # scale translation in order to convert into mm
         block_matrix[0:3, 3] *= target_tag_size
 
         # express the target tag position in world coordinates
@@ -473,9 +472,13 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
             # rotation_axis = np.cross(np.array([1, 0, 0]), vec)
             # block_quat = Quaternion(axis=rotation_axis, angle=angle_between_vectors(vec, np.array([1, 0, 0])))
             # 2nd approach
-            left_tag_quat = quat_canonical_form(Quaternion(matrix=left_tag_matrix))
-            right_tag_quat = quat_canonical_form(Quaternion(matrix=right_tag_matrix) * Quaternion(axis=[0, 1, 0], degrees=180))
-            block_quat = Quaternion(np.mean([left_tag_quat, right_tag_quat]))
+
+            left_tag_quat = Quaternion(matrix=left_tag_matrix)
+            right_tag_quat = Quaternion(matrix=right_tag_matrix) * Quaternion(axis=[0, 1, 0], degrees=180)
+
+            # average quaternions
+            block_quat = average_quaternions([left_tag_quat, right_tag_quat])
+
             positions[block_id] = {'pos': block_center,
                                    'orientation': block_quat.elements,
                                    'tags_detected': np.array([2])}
@@ -535,23 +538,65 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=3, suppress=True)
 
-    im1 = cv2.imread('/home/bch_svt/cartpole/simulation/screenshots/im1.png', cv2.IMREAD_GRAYSCALE)
-    im2 = cv2.imread('/home/bch_svt/cartpole/simulation/screenshots/im2.png', cv2.IMREAD_GRAYSCALE)
+    # im1 = cv2.imread('/home/bch_svt/cartpole/simulation/screenshots/im1.png', cv2.IMREAD_GRAYSCALE)
+    # im2 = cv2.imread('/home/bch_svt/cartpole/simulation/screenshots/im2.png', cv2.IMREAD_GRAYSCALE)
+    #
+    # height, width = im1.shape
+    # camera_params = np.array(get_camera_params_mujoco(height, width, 45))
+    # detector = dt_apriltags.Detector(nthreads=detection_threads, quad_decimate=quad_decimate)
+    # pose = get_block_positions_mujoco(im1=im1,
+    #                                   im2=im2,
+    #                                   block_ids=[3],
+    #                                   target_tag_size=0.015 * scaler * 0.8,
+    #                                   ref_tag_size=0.06 * scaler * 0.8,
+    #                                   ref_tag_id=255,
+    #                                   ref_tag_pos=scaler*np.array([-0.1, -0.1, 0]),
+    #                                   block_sizes=scaler * np.array([0.075, 0.025, 0.015]),
+    #                                   camera_params=camera_params,
+    #                                   detector=detector)
+    #
+    # print(pose[3][:3]/one_millimeter)
+    # print(pose[3][3:])
+    # print(pose)
 
-    height, width = im1.shape
-    camera_params = np.array(get_camera_params_mujoco(height, width, 45))
+    # im = cv2.imread('/home/bch_svt/cartpole/simulation/cv/pictures/zwischenablage4.bmp', cv2.IMREAD_GRAYSCALE)
+    # from cv.camera import Camera
+    # detector = dt_apriltags.Detector(nthreads=detection_threads, quad_decimate=quad_decimate)
+    # cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
+    # corrections = {356: {'pos_corr': [0, 0, 0], 'quat_corr': [1, 0, 0, 0]}}
+    # poses = get_tag_poses_from_image(im, [356], 48., 255, 56.2, np.array([0, 0, 0]), cam1.get_params(), corrections, detector, cam1_mtx, cam2_dist)
+    # quat = Quaternion(matrix=poses[356])
+    # pos = poses[356][:3, 3]
+    # quat = Quaternion([quat[0], quat[2], quat[1], -quat[3]])
+    # x = pos[1]
+    # y = pos[0]
+    # z = -pos[2]
+    # pos = np.array([x, y, z])
+    # print(f"Pose: {repr(poses)}")
+    # print(f"Pos: {repr(pos)}")
+    # print(f"Quat: {repr(quat)}")
+
+    from cv.camera import Camera
+    cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
+    cam1.start_grabbing()
     detector = dt_apriltags.Detector(nthreads=detection_threads, quad_decimate=quad_decimate)
-    pose = get_block_positions_mujoco(im1=im1,
-                                      im2=im2,
-                                      block_ids=[3],
-                                      target_tag_size=0.015 * scaler * 0.8,
-                                      ref_tag_size=0.06 * scaler * 0.8,
-                                      ref_tag_id=255,
-                                      ref_tag_pos=scaler*np.array([-0.1, -0.1, 0]),
-                                      block_sizes=scaler * np.array([0.075, 0.025, 0.015]),
-                                      camera_params=camera_params,
-                                      detector=detector)
+    im = cam1.get_raw_image()
+    print(f"Image size: {im.shape}")
+    corrections = {356: {'pos_corr': [0, 0, 0], 'quat_corr': [1, 0, 0, 0]}}
+    poses = get_tag_poses_from_image(im, [356], 48., 255, 56.2, np.array([0, 0, 0]), cam1.get_params(), corrections,
+                                     detector, cam1_mtx, cam1_dist)
 
-    print(pose[3][:3]/one_millimeter)
-    print(pose[3][3:])
-    print(pose)
+    quat = Quaternion(matrix=poses[356])
+    quat = quat.inverse
+    pos = poses[356][:3, 3]
+    quat = Quaternion([quat[0], quat[2], quat[1], -quat[3]])
+    x = pos[1]
+    y = pos[0]
+    z = -pos[2]
+    pos = np.array([x, y, z])
+    pose_6d = np.array([x, y, z, math.degrees(quat.yaw_pitch_roll[2]), math.degrees(quat.yaw_pitch_roll[1]), math.degrees(quat.yaw_pitch_roll[0])])
+    print(f"Pose: {repr(poses)}")
+    print(f"Pose 6D: {repr(pose_6d)}")
+    print(f"Pos: {repr(pos)}")
+    print(f"Quat: {repr(quat)}")
+
