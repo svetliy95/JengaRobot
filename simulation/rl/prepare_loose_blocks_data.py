@@ -3,6 +3,9 @@ from cv.blocks_calibration import read_block_sizes
 import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.layers import Dense, BatchNormalization
+from tensorflow.keras.utils import to_categorical
+from scipy import stats
 
 
 # prepare dataset
@@ -29,20 +32,36 @@ with open(f"loose_blocks_data.csv") as f:
         if row[3] == 4:
             row[3] = 3
 
+        print(row)
         dataset.append(row)
+
+dataset = np.reshape(dataset, (len(dataset), 4))
+
+x = dataset[:, :3]
+x = stats.zscore(x)
+y = dataset[:, 3]
+y = to_categorical(y, 4)
+
+print(x)
+print(y)
 
 # dataset ready!
 
 
 num_classes = 4
-input_shape = (3,)
+input_shape = 3
 
-model = keras.Sequential(
-    [
-        keras.Input(shape=input_shape),
-        layers.Dense()
-    ]
-)
+model = keras.Sequential()
+model.add(BatchNormalization())
+model.add(Dense(10, input_dim=3, activation='tanh'))
+model.add(BatchNormalization())
+model.add(Dense(10, activation='tanh'))
+model.add(BatchNormalization())
+model.add(Dense(4, activation='softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+model.fit(x=x, y=y, nb_epoch=2000, verbose=1)
 
 
 
