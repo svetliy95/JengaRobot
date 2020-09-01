@@ -12,11 +12,14 @@ import time
 import matplotlib; matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
 from matplotlib import style
+import matplotlib.animation as animation
 style.use('fivethirtyeight')
 import random
 from robots.gripper import Gripper
 from utils.utils import calculate_rotation, euler2quat
 from utils.utils import Line
+from multiprocessing import Process, Queue
+import traceback
 
 log = logging.Logger(__name__)
 formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)sPID:%(process)d:%(funcName)s:%(message)s')
@@ -26,27 +29,38 @@ stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
 class jenga_env(gym.Env):
-    def __init__(self):
+    action_space = gym.spaces.Discrete(2)
+    high = np.array([0.9, 13.86666667, 32.13333333, 1.16353707,
+                     2.09707612, 7.80773817, 299.99928911])
+                    # , 2.,
+                    #  4.])
+    low = np.array([-0.056, 0., 0., 0., 0.,
+                    0., 52.84550074])
+                    # 0., 0.])
+    observation_space = gym.spaces.Box(low=high, high=high)
+
+    def __init__(self, normalize):
         # initialize cameras
-        cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
-        cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
+        self.cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
+        self.cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
         # cam1.start_grabbing()
         # cam2.start_grabbing()
 
+        assert one_millimeter == 1, "Wrong scaler parameter!"
+
         # get corrections
-        corrections = read_corrections('./cv/corrections.json')
+        self.corrections = read_corrections('/home/bch_svt/cartpole/simulation/cv/corrections.json')
 
         # define block sizes
-        self.block_sizes = read_block_sizes('./cv/block_sizes.json')
-        detector = dt_apriltags.Detector(nthreads=detection_threads,
-                                         quad_decimate=quad_decimate,
-                                         quad_sigma=quad_sigma,
-                                         decode_sharpening=decode_sharpening)
-
-        # initialize tower
-        self.tower = Tower(sim=None, viewer=None, simulation_fl=False,
-                           cam1=cam1, cam2=cam2, at_detector=detector,
-                           block_sizes=self.block_sizes, corrections=corrections)
+        self.block_sizes = read_block_sizes('/home/bch_svt/cartpole/simulation/cv/block_sizes.json')
+        self.detector1 = dt_apriltags.Detector(nthreads=detection_threads,
+                                         quad_decimate=quad_decimate1,
+                                         quad_sigma=quad_sigma1,
+                                         decode_sharpening=decode_sharpening1)
+        self.detector2 = dt_apriltags.Detector(nthreads=detection_threads,
+                                               quad_decimate=quad_decimate2,
+                                               quad_sigma=quad_sigma2,
+                                               decode_sharpening=decode_sharpening2)
 
         # initialize robot coordinate system
         x_ax = np.array([404.36, -91.24, 0.36])
@@ -54,13 +68,21 @@ class jenga_env(gym.Env):
         origin = np.array([565.7, 65.05, 0.56])
         coord_system = CoordinateSystem.from_three_points(origin, x_ax, y_ax)
 
-
         # initialize the robot
         gripper = Gripper(right_gripper_ip)
         self.robot = Robot(right_robot_ip, right_robot_port, coord_system, gripper)
         self.robot.connect()
 
-        print(f"Robot pose: {self.robot.get_world_pose(degrees=False)}")
+        self.normalize = normalize
+
+        self.initialize_global_variables()
+
+    def initialize_global_variables(self):
+        # initialize tower
+        self.tower = Tower(sim=None, viewer=None, simulation_fl=False,
+                           cam1=self.cam1, cam2=self.cam2, at_detector1=self.detector1,
+                           at_detector2=self.detector2,
+                           block_sizes=self.block_sizes, corrections=self.corrections)
 
         # initialize state variables
         self.total_distance = 0
@@ -70,20 +92,141 @@ class jenga_env(gym.Env):
         self.initial_tilt_2ax = np.array([0, 0])
         self.previous_tilt_1ax = 0
         self.steps_pushed = 0
-        self.max_pushing_distance = 25
+        self.max_pushing_distance = 30
+        self.individual_pushing_distance = 10
         self.last_force = 0  # needed for calculating block displacement using force
-        self.checked_positions = {i: {j for j in range(3)} for i in range(3, g_blocks_num - 9 + 3)}
+        # self.positions_to_check = {i: {j for j in range(3)} for i in range(4, g_blocks_num - 9 + 3)}
+        self.positions_to_check = {i: {j for j in range(3)} for i in range(4, g_blocks_num - 9 + 3)}
+        # self.checked_positions = {3: {0, 1, 2}, 7: {0, 1, 2}, 12: {0, 1, 2}, 11: {0, 1, 2}, }
+        # self.checked_positions = {4: {0, 1, 2}, 5: {0, 1, 2}, 6: {1, 2}, 7: {1, 2}, 8: {0, 1, 2}, 9: {1}, 10: {0, 1, 2}, 11: {1}, 12: {1}, 13: {0, 2}, 14: {1}, 15: {0, 1, 2}, 16: {1}, 17: {0, 2}}
+        # self.positions_to_check = self.create_random_blocks_to_check(30)
+
+
 
         # reference force
         self.reference_force = 0
 
         # global parameters
-        self.gap = 2  # in mm
+        self.gap = 0  # in mm
         self.grip_depth_narrow = 25
         self.pull_distance = block_length_max - self.grip_depth_narrow + 10
         self.placing_vert_gap = 3  # in mm
         self.placing_pos_correction = np.array([-1.5, 0, 3])
         self.placing_quat_correction = Quaternion(axis=z_unit_vector, degrees=-0.5)
+        self.pushing_distance = 2  # in mm
+
+        # globals
+        self.last_screenshot = None
+        self.last_state = None
+        self.last_reward = None
+        self.previous_step_displacement = None
+        self.previous_step_max_displacement = None
+        self.previous_step_z_rot = None
+        self.extracted_blocks = 0
+        self.plot_state_data = True
+        self.positions_from_last_step = copy.deepcopy(self.tower.ref_positions)
+        self.orientations_from_last_step = copy.deepcopy(self.tower.ref_orientations)
+        self.blocks_for_features = set([i for i in range(g_blocks_max)])
+
+        if self.plot_state_data:
+            self.g_state_data_queue = []
+            self.g_state_data_queue_maxsize = 250
+            self.env_state_data_q = Queue()
+            state_plotting_process = Process(target=self.plot_env_state_data, args=(self.env_state_data_q,))
+            state_plotting_process.start()
+
+    def create_random_blocks_to_check(self, n):
+        max_lvl = len(
+            self.tower.get_layers_state(self.tower.last_ref_positions, self.tower.last_ref_orientations, origin))
+        i = 0
+        positions_to_check = dict()
+        while i < n:
+            lvl = 4 + int(random.random() * (max_lvl - 3))
+            pos = int(random.random() * 3)
+            exists = False
+            if lvl in positions_to_check and pos in positions_to_check[lvl]:
+                exists = True
+
+            if not exists:
+                i += 1
+                if lvl in positions_to_check:
+                    positions_to_check[lvl].add(pos)
+                else:
+                    positions_to_check[lvl] = {pos}
+
+        return positions_to_check
+
+    def plot_env_state_data(self, env_state_data_q):
+        def animate_state_data(i):
+            if not env_state_data_q.empty():
+                data = env_state_data_q.get()
+            else:
+                return
+
+            states = [i[0] for i in data]
+            rewards = [i[1] for i in data]
+
+            forces = [i[0] for i in states]
+            block_displacements = [i[1] for i in states]
+            total_displacements = [i[2] for i in states]
+            current_step_tower_disp = [i[3] for i in states]
+            current_round_tower_disp = [i[4] for i in states]
+            current_step_max_disp = [i[5] for i in states]
+            block_height = [i[6] for i in states]
+
+            ys = []
+            ys.append(current_step_tower_disp)
+            ys.append(current_step_max_disp)
+            ys.append(block_displacements)
+            ys.append(forces)
+            ys.append(rewards)
+
+            axes_titles = ['Current step average displacement', 'Current step max displacement', 'Block displacement', 'Force', 'Reward']
+
+
+            y_limits = []
+            y_limits.append([-1, 3])
+            y_limits.append([-1, 3])
+            y_limits.append([-1, 3])
+            y_limits.append([-0.3, 0.7])
+            y_limits.append([-5, 5])
+            y_limits.append([-0.5, 0.5])
+
+            # x-data
+            xs = range(0, len(forces))
+
+            # update plots
+
+            for i in range(n):
+                axs[i].clear()
+                axs[i].set_ylim(y_limits[i])
+                axs[i].title.set_text(axes_titles[i])
+                axs[i].plot(xs, ys[i])
+
+        # define plot for the force data plotting
+        n = 5
+        state_figure, axs = plt.subplots(nrows=3, ncols=2)
+        axs = np.reshape(axs, (6,))
+
+        # state_figure = plt.figure()
+        # axes = []
+        # for i in range(1, rows_n + 1):
+        #     ax = state_figure.add_subplot(rows_n, 2, i)
+        #     axes.append(ax)
+        state_figure.tight_layout()
+
+        ani = animation.FuncAnimation(state_figure, animate_state_data, interval=1)
+        plt.show()
+
+    def update_env_state_plot(self, state, reward):
+        if len(self.g_state_data_queue) >= self.g_state_data_queue_maxsize:
+            self.g_state_data_queue.pop(0)
+        self.g_state_data_queue.append((state, reward))
+        if not self.env_state_data_q.empty():
+            # self.force_data_q.get()
+            self.env_state_data_q.put(self.g_state_data_queue)
+        else:
+            self.env_state_data_q.put(self.g_state_data_queue)
 
     def _get_stopovers_old(self, start_quarter, end_quarter, tower_xy, height):
         assert start_quarter in [1, 2, 3, 4] and end_quarter in [1, 2, 3, 4]
@@ -256,25 +399,30 @@ class jenga_env(gym.Env):
         else:
             offset_from_top = 2
         max_lvl = len(layers) - offset_from_top
-        available_lvls = {lvl: self.checked_positions[lvl] for lvl in self.checked_positions if lvl < max_lvl}
+        available_lvls = {lvl: self.positions_to_check[lvl] for lvl in self.positions_to_check if lvl < max_lvl}
 
         if not available_lvls:
-            return False
+            print(f"No available lvls!")
+            return None, None, None
 
         # randomly choose one position
         lvl = random.choice(list(available_lvls.keys()))
-        pos = random.sample(self.checked_positions[lvl], 1)[0]
+        pos = random.sample(self.positions_to_check[lvl], 1)[0]
 
         # update global variables
         self.current_lvl = lvl
         self.current_lvl_pos = pos
 
         # remove position and lvl if it has no unchecked positions
-        self.checked_positions[lvl].remove(pos)
-        if not self.checked_positions[lvl]:
-            del self.checked_positions[lvl]
+        self.positions_to_check[lvl].remove(pos)
+        if not self.positions_to_check[lvl]:
+            del self.positions_to_check[lvl]
 
         block_id = self.move_to_block_push(lvl, pos, poses)
+
+        if block_id is None:
+            print(f"Block_id is None!")
+            block_id, lvl, pos = self.move_to_random_block()
 
         return block_id, lvl, pos
 
@@ -354,7 +502,7 @@ class jenga_env(gym.Env):
             self.robot.set_world_pos_orientation(target, gripper_quat)
 
             # switch to the finger tip tool
-            self.robot.switch_tool_sprung_finger_tip()
+            self.robot.switch_tool_sprung_finger_tip_right()
 
             # move to intermediate target with finger tip
             self.robot.set_world_pos(target)
@@ -380,10 +528,6 @@ class jenga_env(gym.Env):
             positions = self.tower.get_positions_from_poses(poses)
             orientations = self.tower.get_orientations_from_poses(poses)
 
-            # reset last reference positions and orientations
-            self.tower.last_ref_positions = copy.deepcopy(positions)
-            self.tower.last_ref_orientations = copy.deepcopy(orientations)
-
             # get orientation of the target block as a quaternion
             block_quat = Quaternion(orientations[block_id])
             block_pos = np.array(positions[block_id]) #+ np.array([0, 0, 50])
@@ -408,8 +552,18 @@ class jenga_env(gym.Env):
             # move pusher backwards to avoid collisions
             self.move_away_from_tower()
 
+            # compute robot gripper orientation
+            gripper_quat = offset_direction_quat
+
             # switch to finger tip
-            self.robot.switch_tool_sprung_finger_tip()
+            dot_x = np.dot(x_unit_vector, gripper_quat.rotate(x_unit_vector))
+            dot_y = np.dot(y_unit_vector, gripper_quat.rotate(x_unit_vector))
+            print(f"Dot_x: {dot_x}")
+            print(f"Dot_y: {dot_y}")
+            if abs(dot_x) > abs(dot_y):
+                self.robot.switch_tool_sprung_finger_tip_right()
+            else:
+                self.robot.switch_tool_sprung_finger_tip_left()
 
             tower_center = self.tower.get_center_xy(positions)
 
@@ -418,21 +572,16 @@ class jenga_env(gym.Env):
             start_quarter = self._get_quarter(robot_pos, tower_center)
             dst_quarter = self._get_quarter(target, tower_center)
 
-            # compute robot gripper orientation
-            gripper_quat = offset_direction_quat
+            # if start_quarter != dst_quarter:
 
-            # switch to the finger tip tool
-            self.robot.switch_tool_sprung_finger_tip()
+            # move upwards
+            current_pos = self.robot.get_world_position()
+            intermediate_pos = self.set_pos_height(current_pos, stopover_height)
+            self.robot.set_world_pos(intermediate_pos)
 
-            if start_quarter != dst_quarter:
-                # move upwards
-                current_pos = self.robot.get_world_position()
-                intermediate_pos = self.set_pos_height(current_pos, stopover_height)
-                self.robot.set_world_pos(intermediate_pos)
-
-                # move over the intermediate target
-                intermediate_pos = self.set_pos_height(target, stopover_height)
-                self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_quat, pos_flags='(7, 0)')
+            # move over the intermediate target
+            intermediate_pos = self.set_pos_height(target, stopover_height)
+            self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_quat, pos_flags='(7, 0)')
 
 
 
@@ -541,12 +690,25 @@ class jenga_env(gym.Env):
         self.move_along_own_axis('x', -distance)
 
     def push(self):
-        self.move_along_own_axis('x', -1)  # move 1mm
-        self.wait_force_stabilizing()
+        self.move_along_own_axis('x', -self.pushing_distance)
+
+        # wait for tower stabilize
+        start = time.time()
+        time.sleep(0.2)
+        poses = self.tower.get_poses_cv()
+        # poses = None
+        elapsed_poses = time.time() - start
+
+        # wait remaining time
+        time.sleep(max(0, read_force_wait - elapsed_poses))
+
+        # self.wait_force_stabilizing()
+
         force = self.get_averaged_force(5) - self.reference_force
-        block_displacement = self.calculate_block_displacement_from_force(1, force - self.last_force)
+        block_displacement = self.calculate_block_displacement_from_force(self.pushing_distance, force - self.last_force)
         self.last_force = force
-        return force, block_displacement
+        self.total_distance += block_displacement
+        return force, block_displacement, poses
 
     def calculate_block_displacement_from_force(self, robot_displacement, measured_force):
         block_displacement = robot_displacement - measured_force/right_robot_spring_constant
@@ -560,13 +722,16 @@ class jenga_env(gym.Env):
         time.sleep(read_force_wait)
 
     def move_away_from_tower(self):
-        self.robot.switch_tool_sprung_finger_tip()
+        self.robot.switch_tool_sprung_finger_tip_right()
         distance1 = max(0, block_length_max - np.linalg.norm(
             self.tower.initial_pos[:2] - self.robot.get_world_position()[:2]))
-        self.robot.switch_tool_two_fingers()
+        self.robot.switch_tool_sprung_finger_tip_left()
         distance2 = max(0, block_length_max - np.linalg.norm(
             self.tower.initial_pos[:2] - self.robot.get_world_position()[:2]))
-        distance = max(distance1, distance2)
+        self.robot.switch_tool_two_fingers()
+        distance3 = max(0, block_length_max - np.linalg.norm(
+            self.tower.initial_pos[:2] - self.robot.get_world_position()[:2]))
+        distance = max(distance1, distance2, distance3)
         self.move_along_own_axis('x', distance)
 
     def orientation_towards_tower_center(self, point, tower_center):
@@ -677,7 +842,7 @@ class jenga_env(gym.Env):
 
         print(f"Go home#2")
 
-    def get_state(self, new_block, force=0, block_displacement=0, mode=0):
+    def get_state_advanced(self, new_block, force=0, block_displacement=0, mode=0, poses=None):
         """
         mode=0: return gym compatible state
         mode=1: return state as State class
@@ -696,14 +861,29 @@ class jenga_env(gym.Env):
 
             # get block positions
             log.debug(f"Before get positions")
-            poses = self.tower.get_poses_cv()
+            if poses is None:
+                poses = self.tower.get_poses_cv()
             block_positions = self.tower.get_positions_from_poses(poses)
             block_orientations = self.tower.get_orientations_from_poses(poses)
+
+
+            # filter out poses calculated using only one tag
+            reduced_poses = dict()
+            for i in poses:
+                if poses[i]['tags_detected'][0] == 2:
+                    reduced_poses[i] = poses[i]
+            if not reduced_poses:
+                reduced_poses = poses
+            reduced_positions = self.tower.get_positions_from_poses(reduced_poses)
+            reduced_orientations = self.tower.get_orientations_from_poses(reduced_poses)
+
+
             log.debug(f"After get positions")
 
             # calculate tilt
             log.debug(f"Before get tilt")
-            tilt_2ax = self.tower.get_tilt_2ax(block_positions, block_orientations, self.current_block_id)
+            # tilt_2ax = self.tower.get_tilt_2ax(block_positions, block_orientations, self.current_block_id)
+            tilt_2ax = self.tower.get_tilt_2ax(reduced_positions, reduced_orientations, self.current_block_id)
             log.debug(f"After get tilt")
             if new_block:
                 self.initial_tilt_2ax = tilt_2ax
@@ -713,11 +893,13 @@ class jenga_env(gym.Env):
 
             # get last z_rotation
             log.debug(f"Before get z rotaiton")
-            z_rotation_last = self.tower.get_last_z_rotation(self.current_block_id, block_orientations)
+            # z_rotation_last = self.tower.get_last_z_rotation(self.current_block_id, block_orientations)
+            z_rotation_last = self.tower.get_last_z_rotation(self.current_block_id, reduced_orientations)
             log.debug(f"After get z rotaiton")
 
             # get current round displacement
-            current_round_displacement = self.tower.get_last_displacement_2ax(self.current_block_id, block_positions, block_orientations)
+            # current_round_displacement = self.tower.get_last_displacement_2ax(self.current_block_id, block_positions, block_orientations)
+            current_round_displacement = self.tower.get_last_displacement_2ax(self.current_block_id, reduced_positions, reduced_orientations)
             log.debug(f"After get displacement")
 
             # get last step tower displacement and z rotation
@@ -739,22 +921,7 @@ class jenga_env(gym.Env):
             # 2) □□x
             # 3) x□□
             # 4) x□x
-            log.debug(f"Before get layers state")
-            layers = self.tower.get_layers_state(block_positions, block_orientations, real_tag_pos)
-            log.debug(f"After get layers state")
-            current_layer = layers[self.current_lvl]
-            print(f"Current layer: {current_layer}")
-            layer_configuration = 0
-            if current_layer[0] is not None and current_layer[1] is not None and current_layer[2] is not None:
-                layer_configuration = 0
-            elif current_layer[0] is not None and current_layer[2] is not None:
-                layer_configuration = 1
-            elif current_layer[0] is not None and current_layer[1] is not None:
-                layer_configuration = 2
-            elif current_layer[1] is not None and current_layer[2] is not None:
-                layer_configuration = 3
-            elif current_layer[1] is not None:
-                layer_configuration = 4
+            layer_configuration = self.calculate_layer_configuration(block_positions, block_orientations)
 
             # forma a state
             state = np.array([force, block_displacement, total_block_distance, current_step_tower_displacement[0],
@@ -762,7 +929,157 @@ class jenga_env(gym.Env):
                              current_round_displacement[1], last_tilt_2ax[0], last_tilt_2ax[1], current_step_z_rot,
                              z_rotation_last, side, block_height, self.current_lvl_pos, layer_configuration])
             log.debug(f"Get state#2")
-            return state
+
+            if self.plot_state_data:
+                self.update_env_state_plot(state)
+
+            return state, poses
+
+    def get_state(self, new_block, force=0, block_displacement=0, mode=0, poses=None):
+        """
+        mode=0: return gym compatible state
+        mode=1: return state as State class
+        """
+
+
+        if mode == 0:
+
+            log.debug(f"Get state#1")
+
+            # get block positions
+            log.debug(f"Before get positions")
+
+            if poses is None:
+                poses = self.tower.get_poses_cv()
+            block_positions = self.tower.get_positions_from_poses(poses)
+            block_orientations = self.tower.get_orientations_from_poses(poses)
+
+            # filter out poses calculated using only one tag
+            reduced_poses = dict()
+            for i in poses:
+                if poses[i]['tags_detected'][0] == 2 and i in self.blocks_for_features:
+                    reduced_poses[i] = poses[i]
+            if not reduced_poses:
+                reduced_poses = poses
+
+            if not new_block:
+                self.blocks_for_features = self.blocks_for_features.intersection(set(reduced_poses.keys()))
+
+            reduced_poses = {i: reduced_poses[i] for i in reduced_poses if i in self.blocks_for_features}
+
+            reduced_positions = self.tower.get_positions_from_poses(reduced_poses)
+            reduced_orientations = self.tower.get_orientations_from_poses(reduced_poses)
+
+            ###############333 DEBUUUGUUGGUUGGUGGGGG
+            detected_blocks = []
+            for i in reduced_poses:
+                detected_blocks.append(i)
+            detected_blocks.sort()
+            print(f"Detected blocks: {detected_blocks}")
+            print(f"Num of detected blocks: {len(detected_blocks)}")
+            displacements = {}
+            for i in detected_blocks:
+                displacements[i] = np.linalg.norm(self.positions_from_last_step[i] - block_positions[i])
+            displacements = {k: v for k, v in sorted(displacements.items(), key=lambda item: item[1])}
+            print(f"Detected blocks displacements: {displacements}")
+
+            ####################################33
+
+
+            log.debug(f"After get positions")
+
+            # calculate tilt
+            log.debug(f"Before get tilt")
+
+            log.debug(f"After get tilt")
+            if new_block:
+                self.previous_step_displacement = 0
+                self.previous_step_max_displacement = 0
+
+                # save detected blocks that will be used for features calculating
+                self.blocks_for_features = set(reduced_poses.keys())
+
+                for i in reduced_positions:
+                    self.positions_from_last_step[i] = reduced_positions[i]
+
+            # get last z_rotation
+            log.debug(f"Before get z rotaiton")
+            log.debug(f"After get z rotaiton")
+
+            # get current round displacement
+            # current_round_displacement = self.tower.get_last_displacement_2ax(self.current_block_id, block_positions, block_orientations)
+            current_round_displacement = self.tower.get_last_displacement_2ax(self.current_block_id, reduced_positions, reduced_orientations)
+            log.debug(f"After get displacement")
+
+            # get max displacement
+            current_round_block_max_displacement = self.tower.get_last_max_displacement_2ax(self.current_block_id, reduced_positions,
+                                                                              reduced_orientations)
+
+            # get last step tower displacement and z rotation
+            current_step_tower_displacement = np.linalg.norm(self.get_last_step_avg_disp(reduced_positions, reduced_orientations))
+            current_step_max_displacement = max(0, np.linalg.norm(self.get_last_step_max_disp(reduced_positions, reduced_orientations))- 1)
+
+            # reset previous displacement and z rotation
+            self.previous_step_displacement = current_round_displacement
+            self.previous_step_max_displacement = current_round_block_max_displacement
+            for i in reduced_positions:
+                self.positions_from_last_step[i] = reduced_positions[i]
+
+            total_block_distance = self.total_distance
+
+            # get block height
+            # block_height = block_positions[self.current_block_id][2] / one_millimeter
+            block_height = self.robot.get_world_position()[2]
+
+            # get layer configuration
+            # 0) □□□
+            # 1) □x□
+            # 2) □□x
+            # 3) x□□
+            # 4) x□x
+            layer_configuration = self.calculate_layer_configuration(block_positions, block_orientations)
+
+            # forma a state
+            state = np.array([force,
+                              block_displacement,
+                              total_block_distance,
+                              current_step_tower_displacement,
+                              np.linalg.norm(current_round_displacement),
+                              current_step_max_displacement,
+                              block_height])
+                              # self.current_lvl_pos,
+                              # layer_configuration])
+                # ,
+                #               self.current_block_id])
+            log.debug(f"Get state#2")
+
+            return state, poses
+
+    def calculate_layer_configuration(self, positions, orientations):
+        # get layer configuration
+        # 0) □□□
+        # 1) □x□
+        # 2) □□x
+        # 3) x□□
+        # 4) x□x
+        log.debug(f"Before get layers state")
+        layers = self.tower.get_layers_state(positions, orientations, real_tag_pos)
+        log.debug(f"After get layers state")
+        current_layer = layers[self.current_lvl]
+        print(f"Current layer: {current_layer}")
+        layer_configuration = 0
+        if current_layer[0] is not None and current_layer[1] is not None and current_layer[2] is not None:
+            layer_configuration = 0
+        elif current_layer[0] is not None and current_layer[2] is not None:
+            layer_configuration = 1
+        elif current_layer[0] is not None and current_layer[1] is not None:
+            layer_configuration = 2
+        elif current_layer[1] is not None and current_layer[2] is not None:
+            layer_configuration = 3
+        elif current_layer[1] is not None:
+            layer_configuration = 4
+
+        return layer_configuration
 
     # measures and averages forces to get the reference force
     def set_reference_force(self):
@@ -788,10 +1105,10 @@ class jenga_env(gym.Env):
         # move over the destination position
         intermediate_pos = copy.deepcopy(zwischenablage_place_pose[:3])
         intermediate_pos[2] = stopover_height
-        self.robot.set_world_pos_orientation_mov(intermediate_pos, zwischenablage_place_quat, pos_flags='(7, 0)')
+        self.robot.set_world_pos_orientation_mov(intermediate_pos, zwischenablage_place_quat, speed=10, pos_flags='(7, 0)')
 
         # move to the end target
-        self.robot.set_world_pose_mov(zwischenablage_place_pose, degrees=True, pos_flags='(7, 0)')
+        self.robot.set_world_pose_mov(zwischenablage_place_pose, degrees=True, speed=10, pos_flags='(7, 0)')
 
         # release block
         self.robot.open_wide()
@@ -802,10 +1119,10 @@ class jenga_env(gym.Env):
     def take_from_zwischenablage(self):
         # move to intermediate pos
         intermediate_pos = zwischenablage_take_pos + zwischenablage_take_quat.rotate(x_unit_vector) * 50
-        self.robot.set_world_pos_orientation(intermediate_pos, zwischenablage_take_quat)
+        self.robot.set_world_pos_orientation(intermediate_pos, zwischenablage_take_quat, speed=15)
 
         # move to the final target
-        self.robot.set_world_pose(zwischenablage_take_pose, degrees=True)
+        self.robot.set_world_pose(zwischenablage_take_pose, degrees=True, speed=15)
 
         # grip
         self.robot.grip()
@@ -814,7 +1131,7 @@ class jenga_env(gym.Env):
         current_pos = self.robot.get_world_position()
         waiting_pos = current_pos
         waiting_pos[2] = stopover_height
-        self.robot.set_world_pos_orientation(waiting_pos, Quaternion(axis=z_unit_vector, degrees=45))
+        self.robot.set_world_pos_orientation(waiting_pos, Quaternion(axis=z_unit_vector, degrees=45), speed=15)
 
     def calculate_gripper_orientation(self, block_orientation):
         dot_x = np.dot(block_orientation.rotate(x_unit_vector), x_unit_vector)
@@ -822,12 +1139,12 @@ class jenga_env(gym.Env):
 
         orientation1 = block_orientation * Quaternion(axis=z_unit_vector, degrees=90)
         orientation2 = block_orientation * Quaternion(axis=z_unit_vector, degrees=-90)
-        if abs(dot_x) >= 0.9:
+        if abs(dot_x) > 0.5:
             if np.dot(orientation1.rotate(x_unit_vector), y_unit_vector) < 0:
                 return orientation1
             if np.dot(orientation2.rotate(x_unit_vector), y_unit_vector) < 0:
                 return orientation2
-        if abs(dot_y) >= 0.9:
+        if abs(dot_y) >= 0.5:
             if np.dot(orientation1.rotate(x_unit_vector), x_unit_vector) > 0:
                 return orientation1
             if np.dot(orientation2.rotate(x_unit_vector), x_unit_vector) > 0:
@@ -855,10 +1172,10 @@ class jenga_env(gym.Env):
 
         # go over the last stopover
         intermediate_pos = self.set_pos_height(last_stopover, stopover_height)
-        self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_orientation, pos_flags='(7, 0)')
+        self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_orientation, pos_flags='(7, 0)', speed=10)
 
         # go to the last stopover near the tower
-        self.robot.set_world_pos_orientation_mov(last_stopover, gripper_orientation, pos_flags='(7, 0)')
+        self.robot.set_world_pos_orientation_mov(last_stopover, gripper_orientation, pos_flags='(7, 0)', speed=10)
 
         # move to the target position
         self.robot.set_world_pos(pos, speed=1)
@@ -894,7 +1211,7 @@ class jenga_env(gym.Env):
         for j in range(30):
             block_id, lvl, pos = self.move_to_random_block()
             for i in range(30):
-                force, displacement = self.push()
+                force, displacement, poses = self.push()
                 print(f"Step #i: Force: {force}, displacement: {displacement}")
                 if force > self.get_force_threshold(lvl):
                     break
@@ -911,12 +1228,13 @@ class jenga_env(gym.Env):
             poses = self.tower.get_poses_cv()
             self.move_to_block_id_push(block_id, poses)
             for i in range(30):
-                force, displacement = self.push()
+                force, displacement, poses = self.push()
                 print(f"Step #i: Force: {force}, displacement: {displacement}")
                 if force > self.get_force_threshold(lvl):
                     break
                 if i > 10:
                     self.push_through(20)
+                    # input('Confirm extraction:')
                     self.extract_and_place_on_top(block_id)
                     break
 
@@ -925,7 +1243,6 @@ class jenga_env(gym.Env):
         min = 0.1
         max_lvl = 17
         return max - ((max-min)/max_lvl) * lvl
-
 
     # debugging funciton
     def debug_push(self):
@@ -1008,108 +1325,327 @@ class jenga_env(gym.Env):
 
         return loose_blocks
 
+    # returns observation, reward, done, info
+    def step(self, action):
+        step_start_time = time.time()
+        normalize = self.normalize
+        log.debug(f"Jenga step#1")
+        log.debug(f"Jenga step#2")
+
+        if action == 0:  # switch block
+            log.debug(f"Jenga step#3")
+            # reset state variables
+            self.total_distance = 0
+            self.steps_pushed = 0
+            log.debug(f"Before move to random block")
+            block_id, lvl, pos = self.move_to_random_block()
+            log.debug(f"After move to random block")
+
+            info = {'extracted_blocks': self.extracted_blocks}
+            log.debug(f"Before get state!")
+
+            poses = self.tower.get_poses_cv()
+            positions = self.tower.get_positions_from_poses(poses)
+            orientations = self.tower.get_orientations_from_poses(poses)
+
+            # reset last reference positions and orientations
+            self.tower.last_ref_positions = copy.deepcopy(positions)
+            self.tower.last_ref_orientations = copy.deepcopy(orientations)
+
+            # reinitialize blocks that can be using for feature calculation
+            self.blocks_for_features = set([i for i in range(g_blocks_max)])
+
+            state, poses = self.get_state(new_block=True, poses=poses)
+
+            log.debug(f"After get state!")
+
+            # normalize state
+            if normalize:
+                state = self.normalize_state(state)
+
+            # check whether the game is over or not
+            positions = self.tower.get_positions_from_poses(poses)
+            tower_toppled = self.tower.toppled(positions, self.current_block_id)
+            done = block_id is None or tower_toppled
+
+            print(f"Block_id: {block_id}")
+            print(f"Tower toppled: {tower_toppled}")
+
+            if tower_toppled:
+                reward = tower_toppled_reward
+            else:
+                reward = 0
+
+            # save the last state and reward
+            self.last_state = state
+            self.last_reward = reward
+
+            # set reference force
+            self.set_reference_force()
+
+            if self.normalize:
+                state_for_plotting = state * state_space_stds_real_robot + state_space_means_real_robot
+
+            if self.plot_state_data:
+                self.update_env_state_plot(state_for_plotting, reward)
+
+            log.debug(f"Jenga step#4")
+            return state, reward, done, info
+
+        if action == 1:  # extract and switch block
+            log.debug(f"Jenga step#5")
+            # extract and move to the next block
+            if self.steps_pushed == self.individual_pushing_distance:
+                log.debug(f"Jenga step#6")
+                # reset state variables
+                self.total_distance = 0
+                self.steps_pushed = 0
+
+                # push through remaining distance
+                self.push_through(self.max_pushing_distance - self.individual_pushing_distance)
+
+                log.debug(f"Before pull_and_place")
+                self.extract_and_place_on_top(self.current_block_id)
+                self.go_home()
+                input(f"Confirm extracting: ")
+                log.debug(f"After pull_and_place")
 
 
+
+                info = {'extracted_blocks': self.extracted_blocks}
+
+                poses = self.tower.get_poses_cv()
+                positions = self.tower.get_positions_from_poses(poses)
+                orientations = self.tower.get_orientations_from_poses(poses)
+
+                # reinitialize blocks that can be using for feature calculation
+                self.blocks_for_features = set([i for i in range(g_blocks_max)])
+
+                # reset last reference positions and orientations
+                self.tower.last_ref_positions = copy.deepcopy(positions)
+                self.tower.last_ref_orientations = copy.deepcopy(orientations)
+
+                log.debug(f"Before  get state")
+                state, poses = self.get_state(new_block=True, poses=poses)
+                log.debug(f"After  get state")
+
+                # normalize state
+                if normalize:
+                    state = self.normalize_state(state)
+
+                log.debug(f"Before move_to_random_block")
+                block_id, lvl, block_pos = self.move_to_random_block()
+                log.debug(f"After move_to_random_block")
+                self.extracted_blocks += 1
+
+                # check whether the game is over or not
+                positions = self.tower.get_positions_from_poses(poses)
+                tower_toppled = self.tower.toppled(positions, self.current_block_id)
+                done = block_id is None or tower_toppled
+
+                print(f"Block_id: {block_id}")
+                print(f"Tower toppled: {tower_toppled}")
+
+                if tower_toppled:
+                    reward = tower_toppled_reward
+                else:
+                    reward = reward_extract
+
+                # save the last state and reward
+                self.last_state = state
+                self.last_reward = reward
+
+                if self.normalize:
+                    state_for_plotting = state * state_space_stds_real_robot + state_space_means_real_robot
+
+                if self.plot_state_data:
+                    self.update_env_state_plot(state_for_plotting, reward)
+
+                # set reference force
+                self.set_reference_force()
+
+                log.debug(f"Jenga step#7")
+                return state, reward, done, info
+
+            else:  # push
+                log.debug(f"Jenga step#8")
+
+                start = time.time()
+                force, displacement, poses = self.push()
+                elapsed = time.time() - start
+                print(f'Push time: {elapsed*1000:.2f}ms')
+
+                log.debug(f"Pushed!")
+                self.steps_pushed += 1
+                log.debug(f"Before get state")
+                start = time.time()
+                state, poses = self.get_state(new_block=False, force=force, block_displacement=displacement, poses=poses)
+                elapsed = time.time() - start
+                print(f'Get state time: {elapsed*1000:.2f}ms')
+                log.debug(f"After get state")
+
+                # check whether the game is over or not
+                start = time.time()
+                positions = self.tower.get_positions_from_poses(poses)
+
+                tower_toppled = self.tower.toppled(positions, self.current_block_id)
+                elapsed = time.time() - start
+                print(f'Toppled time: {elapsed * 1000:.2f}ms')
+                done = tower_toppled
+
+                print(f"Tower toppled: {tower_toppled}")
+
+                if tower_toppled:
+                    reward = tower_toppled_reward
+                else:
+                    reward = self.compute_reward(state, normalize)
+
+
+                info = {'extracted_blocks': self.extracted_blocks}
+
+                # normalize state
+                if normalize:
+                    state = self.normalize_state(state)
+
+                # save the last state and reward
+                self.last_state = state
+                self.last_reward = reward
+
+                log.debug(f"Jenga step#9")
+
+                step_elapsed = time.time() - step_start_time
+                print(f"Step elapsed total: {step_elapsed:.3f}s")
+
+                if self.normalize:
+                    state_for_plotting = state * state_space_stds_real_robot + state_space_means_real_robot
+
+                if self.plot_state_data:
+                    self.update_env_state_plot(state_for_plotting, reward)
+
+                return state, reward, done, info
+
+    def reset(self):
+        # go home
+        self.go_home()
+
+        # wait until tower reset
+        input('Confirm tower reset: ')  # user should enter some input into terminal to confirm tower reset
+
+        # reset global variables
+        self.initialize_global_variables()
+
+        # move to some block
+        self.move_to_random_block()
+
+        poses = self.tower.get_poses_cv()
+        positions = self.tower.get_positions_from_poses(poses)
+        orientations = self.tower.get_orientations_from_poses(poses)
+
+        # reset last reference positions and orientations
+        self.tower.last_ref_positions = copy.deepcopy(positions)
+        self.tower.last_ref_orientations = copy.deepcopy(orientations)
+        for i in positions:
+            self.positions_from_last_step[i] = positions[i]
+
+        # get initial state
+        state, poses = self.get_state(True, poses=poses)
+
+        print(f"State: {state}")
+
+
+
+        if self.normalize:
+            state_for_plotting = state * state_space_stds_real_robot + state_space_means_real_robot
+
+        # update state plot
+        self.update_env_state_plot(state_for_plotting, 0)
+
+        return state
+
+    def close(self):
+        self.go_home()
+        input('Confirm closing: ')
+
+    def normalize_state(self, state):
+        return (state - state_space_means_real_robot) / state_space_stds_real_robot
+
+    def normalize_reward(self, reward):
+        return (reward - reward_mean_real_robot) / reward_std_real_robot
+
+    def compute_reward_advanced(self, state, normalize):
+        block_displacement = state[1]
+        tilt = state[7:9]
+        current_step_tower_displacement = state[3:5]
+        current_step_tower_z_rotation = state[9]
+
+        tower_displacement_1ax = np.linalg.norm(current_step_tower_displacement)
+        tower_tilt_1ax = np.linalg.norm(tilt)
+        z_rot = abs(current_step_tower_z_rotation)
+        coefficients = np.array([1, -1.5, -1, -2])
+
+        reward = sum(coefficients * np.array([block_displacement, tower_displacement_1ax, tower_tilt_1ax, z_rot]))
+
+        # normalize reward
+        if normalize:
+            reward = self.normalize_reward(reward)
+
+        return reward
+
+    def compute_reward(self, state, normalize):
+        block_displacement = state[1]
+        current_step_tower_displacement = state[3]
+        current_step_max_displacement = state[5]
+
+        tower_displacement_1ax = np.linalg.norm(current_step_tower_displacement)
+        coefficients = np.array([1, -6, -3])
+
+        reward = sum(coefficients * np.array([block_displacement, tower_displacement_1ax, current_step_max_displacement]))
+
+        # normalize reward
+        if normalize:
+            reward = self.normalize_reward(reward)
+
+        return reward
+
+    def get_last_step_avg_disp(self, positions, orientations):
+        return self.tower._get_displacement_2ax(self.current_block_id, self.positions_from_last_step, positions, orientations)
+
+    def get_last_step_max_disp(self, positions, orientations):
+        return self.tower._get_last_max_displacement_2ax(self.current_block_id, self.positions_from_last_step, positions, orientations)
 
 if __name__ == "__main__":
-    jenga = jenga_env()
+    jenga = jenga_env(True)
 
-    blocks = [(0,1), (1, 2), (2, 2), (3, 0), (3, 2), (4, 1), (5, 2), (6, 2), (7, 2), (8, 2), (9, 1), (10, 1), (11, 0), (11, 2), (13, 1)]
 
+    jenga.check_extractable_blocks()
+
+    exit()
+
+    poses_list = []
+
+    initial_poses = jenga.tower.get_poses_cv()
+
+    for i in range(10):
+        start = time.time()
+        poses = jenga.tower.get_poses_cv()
+        elapsed = time.time() - start
+        print(f'Elapsed time: {elapsed*1000:.2f}ms')
+        poses_list.append(poses)
+
+    deviations = {}
+    for id in initial_poses:
+        deviations[id] = []
+        for poses in poses_list:
+            if id in poses:
+                deviation = np.linalg.norm(poses[id]['pos'] - initial_poses[id]['pos'])
+                deviations[id].append(deviation)
+        deviations[id] = np.mean(deviations[id])
+
+    for i in deviations:
+        print(f"Mean deviation of block #{i} = {deviations[i]}")
+
+
+    # print(jenga.find_extractable_blocks())
     #
-    # tower_center = jenga.tower.get_center_xy(positions)
-    #
-    # # move through stopovers
-    # quarter1 = jenga._get_quarter(jenga.robot.get_world_position(), tower_center)
-    # print(f"Quarter: {quarter1}")
-    #
-    # exit(0)
-
-    print(jenga.find_extractable_blocks())
-    print(f"State:")
-    print(f"{jenga.get_state(new_block=True)}")
-
     # jenga.check_extractable_blocks()
 
-    exit()
-
-    jenga.go_home()
-
-    for i in range(10):
-        res = jenga.move_to_random_block(positions)
-        print(f"Result of move_to_random_block: {res}")
-    exit()
-
-
-    for i in range(6):
-        jenga.go_home()
-        jenga.take_from_zwischenablage()
-        poses = jenga.tower.get_poses_cv()
-        positions = jenga.tower.get_positions_from_poses(poses)
-        orientations = jenga.tower.get_orientations_from_poses(poses)
-        jenga.place_on_top(47, positions, orientations)
-        poses = jenga.tower.get_poses_cv()
-        positions = jenga.tower.get_positions_from_poses(poses)
-        orientations = jenga.tower.get_orientations_from_poses(poses)
-        jenga.tower.calculate_orientation_corrections(orientations)
-
-    exit()
-
-    for i in range(3):
-        print(f"For go home")
-        jenga.go_home()
-        print(f"After go home")
-
-        jenga.extract(11, positions, orientations)
-        jenga.place_on_zwischenablage()
-        jenga.take_from_zwischenablage()
-        jenga.place_on_top(11, positions, orientations)
-
-
-    exit()
-
-
-    poses = jenga.tower.get_poses_cv()
-    print(f"Poses: {poses}")
-    positions = jenga.tower.get_positions_from_poses(poses)
-    orientations = jenga.tower.get_orientations_from_poses(poses)
-
-
-
-    # jenga.move_to_block(7, 1)
-    # time.sleep(1)
-    # jenga.set_reference_force()
-    # jenga.push()
-
-    lvls = [i for i in range(0, 18, 1) if i % 2 == 1]
-    for i in range(15):
-        lvl = random.choice(lvls)
-        pos = int(random.random() * 3)
-        block_id = jenga.tower.get_block_id_from_pos(lvl, pos, positions, orientations, real_tag_pos)
-        jenga.move_to_block_id_push(block_id, positions, orientations)
-    exit(0)
-    forces = dict()
-    for i in range(10):
-        lvls = [i for i in range(0, 18, 1) if i % 2 == 1]
-        lvl = random.choice(lvls)
-        pos = int(random.random()*3)
-        block_id = jenga.tower.get_block_id_from_pos(lvl, pos, positions, orientations, real_tag_pos)
-        jenga.move_to_block_id_push(block_id, positions, orientations)
-        jenga.wait_force_stabilizing()
-
-        forces[block_id] = []
-        jenga.set_reference_force()
-        for i in range(35):
-            force = jenga.push()
-            forces[block_id].append(force)
-            if force > 0.15:
-                break
-            if i > 10:
-                jenga.push_through(35 - 10)
-                break
-        jenga.go_home()
-
-    print(repr(forces))
-
-
-    jenga.go_home()

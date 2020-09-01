@@ -7,7 +7,7 @@ from cv.transformations import matrix2pose_ZYX, getRotationMatrix_180_x, getRota
 from pyquaternion import Quaternion
 scaler = 50
 one_millimeter = 0.001 * scaler
-from constants import detection_threads, quad_decimate
+from constants import detection_threads, quad_decimate1
 from cv2 import aruco
 
 class bcolors:
@@ -336,6 +336,7 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
     for detection in detections:
         if detection.tag_id in target_tag_ids:
             R = detection.pose_R
+            # R = orthogonalize_matrix(R)
             t = detection.pose_t
             block_matrix = np.concatenate((R, t), axis=1)
             last_row = np.reshape([0, 0, 0, 1], (1, 4))
@@ -402,7 +403,7 @@ def get_tag_poses_from_image(img, target_tag_ids, target_tag_size, ref_tag_id, r
 
 
 def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes,
-                        corrections, camera_params1, camera_params2, return_images, detector, cam_mtx1, cam_dist1, cam_mtx2, cam_dist2):
+                        corrections, camera_params1, camera_params2, return_images, detector1, detector2, cam_mtx1, cam_dist1, cam_mtx2, cam_dist2):
 
     # calculate tag ids corresponding to block ids
     target_tag_ids = []
@@ -418,7 +419,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_pos=ref_tag_pos,
                                                      camera_params=camera_params1,
                                                      corrections=corrections,
-                                                     detector=detector,
+                                                     detector=detector1,
                                                      cam_mtx=cam_mtx1,
                                                      cam_dist=cam_dist1)
 
@@ -430,7 +431,7 @@ def get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_
                                                      ref_tag_pos=ref_tag_pos,
                                                      camera_params=camera_params2,
                                                      corrections=corrections,
-                                                     detector=detector,
+                                                     detector=detector2,
                                                      cam_mtx=cam_mtx2,
                                                      cam_dist=cam_dist2)
 

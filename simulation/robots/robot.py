@@ -371,11 +371,14 @@ class Robot:
     def switch_tool_two_fingers(self):
         self.switch_tool(2)
 
-    def switch_tool_sprung_finger_tip(self):
+    def switch_tool_sprung_finger_tip_right(self):
         self.switch_tool(3)
 
-    def switch_tool_center_of_area(self):
+    def switch_tool_sprung_finger_tip_left(self):
         self.switch_tool(4)
+
+    def switch_tool_center_of_area(self):
+        self.switch_tool(5)
 
     def grip(self):
         self.gripper.grip()

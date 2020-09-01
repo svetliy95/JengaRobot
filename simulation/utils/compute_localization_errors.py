@@ -43,7 +43,7 @@ def evaluate():
             data = list(reader)
             for row in data:
                 # print(d)
-                if int(row[6]) == 1:
+                if int(row[6]) == 2:
                     x_errors.append(float(row[0]))
                     y_errors.append(float(row[1]))
                     z_errors.append(float(row[2]))
@@ -71,24 +71,26 @@ def evaluate():
     d = remove_outliers(d)
 
     # plot all distibutions
-    plt.subplot(4, 2, 1)
-    sns.distplot(x_errors, bins=200)
-
-    plt.subplot(4, 2, 2)
-    sns.distplot(y_errors, bins=200)
-
-    plt.subplot(4, 2, 3)
-    sns.distplot(z_errors, bins=200)
-
-    plt.subplot(4, 2, 4)
-    sns.distplot(a, bins=200)
+    # plt.subplot(4, 2, 1)
+    # sns.distplot(x_errors, bins=200)
+    #
+    # plt.subplot(4, 2, 2)
+    # sns.distplot(y_errors, bins=200)
+    #
+    # plt.subplot(4, 2, 3)
+    # sns.distplot(z_errors, bins=200)
+    #
+    # plt.subplot(4, 2, 4)
+    # sns.distplot(a, bins=200)
 
 
 
 
     # plot histograms
+    errors = d
 
-    # sns.distplot(a, bins=500)
+
+    sns.distplot(errors, bins=500)
     # sns.scatterplot(x_errors, b)
 
     # compute parameters for all features
@@ -111,18 +113,20 @@ def evaluate():
     print(f"Params c: {params_c}")
     print(f"Params d: {params_d}")
 
-    # mu = np.mean(errors)
-    # sigma = np.std(errors)
-    # print(f"Mean: {np.mean(errors):.2f}, std: {np.std(errors):.2f}")
+    params = params_d
+
+    mu = np.mean(errors)
+    sigma = np.std(errors)
+    print(f"Mean: {mu:.2f}, std: {sigma:.2f}")
 
     # compute log likelihood of the fitted dist
-    # loglh = dist.logpdf(errors, params[0], params[1], params[2], params[3]).sum()
-    # print(f"Log likelihood: {loglh}")
+    loglh = dist.logpdf(errors, params[0], params[1], params[2], params[3]).sum()
+    print(f"Log likelihood: {loglh}")
 
     # compute fitted dist
-    # x = np.linspace(-3*sigma, 3*sigma, 100)
-    # plt.plot(x, dist.pdf(x, params[0], params[1], params[2], params[3]))
-    # x = np.linspace(mu - 3 * sigma, mu + 3 * sigma, 100)
+    x = np.linspace(-3*sigma, 3*sigma, 100)
+    plt.plot(x, dist.pdf(x, params[0], params[1], params[2], params[3]))
+    x = np.linspace(mu - 3 * sigma, mu + 3 * sigma, 100)
 
     # plot fitted dist
     # plt.plot(x, stats.norm.pdf(x, mu, sigma))

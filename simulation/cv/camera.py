@@ -7,6 +7,7 @@ from pypylon import pylon
 import logging
 import colorlog
 from constants import *
+from collections.abc import Iterable
 
 # initialize logging
 log = logging.Logger(__name__)
@@ -45,6 +46,29 @@ class Camera:
         device_instace = tlFactory.CreateDevice(device)
         self.camera = pylon.InstantCamera(tlFactory.CreateDevice(device))
         self.camera.Open()
+
+    def initialize_both_cameras(self, serials, mtxs,  dists):
+        self.mtx1 = mtxs[0]
+        self.mtx2 = mtxs[1]
+        self.dist1 = dists[0]
+        self.dist2 = dists[1]
+
+        # get available devices
+        tlFactory = pylon.TlFactory.GetInstance()
+        devices = tlFactory.EnumerateDevices()
+
+        # rearrange devices if needed
+        if serials[0] == devices[1].GetSerialNumber():
+            devices[0], devices[1] = devices[1], devices[0]
+
+        self.cameras = pylon.InstantCameraArray(2)
+
+        # Create and attach all Pylon Devices.
+        for i, cam in enumerate(self.cameras):
+            cam.Attach(tlFactory.CreateDevice(devices[i]))
+
+            # Print the model name of the camera.
+            print("Using device ", cam.GetDeviceInfo().GetModelName())
 
     @staticmethod
     def calibrate(fnames):
@@ -193,7 +217,6 @@ class Camera:
         img = self.undistort(img)
         return img
 
-
     def take_raw_picture(self):
         image = self.camera.GrabOne(1000).Array
         # image = np.rot90(image, 3)
@@ -207,21 +230,35 @@ class Camera:
         # cv2.waitKey(0)
         return image
 
-if __name__ == '__main__':
-    fnames = glob.glob('./pictures/phone_calibration/*.jpg')
-    mtx, dist = Camera.calibrate(fnames)
-    # mtx_diff = np.divide(abs(mtx-cam1_mtx_11cm_2), mtx) * 100
-    # dist_diff = np.divide(abs(dist-cam1_dist_11cm_2), dist) * 100
-    # print(mtx_diff)
-    # print(dist_diff)
-    print(repr(mtx))
-    print(repr(dist))
+    def show_online(self):
+        self.start_grabbing()
 
-    img = cv2.imread(f"./pictures/phone_calibration/old_but_gold/photo_2020-08-12_13-58-47.jpg")
-    img = cv2.undistort(img, phone_cam_mtx, phone_cam_dist)
-    cv2.namedWindow('img', cv2.WINDOW_NORMAL)
-    cv2.imshow('img', img)
-    cv2.waitKey(0)
+        while True:
+            im = self.get_raw_image()
+            cv2.imshow('img', im)
+            cv2.waitKey(1)
+
+
+if __name__ == '__main__':
+    # fnames = glob.glob('./pictures/phone_calibration/*.jpg')
+    # mtx, dist = Camera.calibrate(fnames)
+    # # mtx_diff = np.divide(abs(mtx-cam1_mtx_11cm_2), mtx) * 100
+    # # dist_diff = np.divide(abs(dist-cam1_dist_11cm_2), dist) * 100
+    # # print(mtx_diff)
+    # # print(dist_diff)
+    # print(repr(mtx))
+    # print(repr(dist))
+
+    # camera
+    camera = Camera(cam1_serial, cam1_mtx, cam1_dist)
+    camera.show_online()
+
+
+    # img = cv2.imread(f"./pictures/phone_calibration/old_but_gold/photo_2020-08-12_13-58-47.jpg")
+    # img = cv2.undistort(img, phone_cam_mtx, phone_cam_dist)
+    # cv2.namedWindow('img', cv2.WINDOW_NORMAL)
+    # cv2.imshow('img', img)
+    # cv2.waitKey(0)
     # cam = Camera('22917552', mtx, dist)
     # im = cam.take_picture()
     # print(f"Shape: {im.shape}")

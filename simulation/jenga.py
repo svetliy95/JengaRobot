@@ -36,6 +36,7 @@ from utils.utils import get_angle_between_quaternions_3ax
 import csv
 import random
 import multiprocessing_logging
+import copy
 
 profiler = Profiler()
 
@@ -185,6 +186,7 @@ class jenga_env(gym.Env):
         self.tower_toppled_fl = False
         self.simulation_aborted = False
         self.simulation_over = False
+        self.plot_env_state = True
 
         # globals
         self.last_screenshot = None
@@ -198,6 +200,8 @@ class jenga_env(gym.Env):
         # sensor data
         self.g_sensor_data_queue = []
         self.g_sensors_data_queue_maxsize = 250
+        self.g_state_data_queue = []
+        self.g_state_data_queue_maxsize = 250
 
         # initialize simulation
         scene_xml, self.seed = generate_scene(g_blocks_num, g_timestep, seed=seed)
@@ -246,6 +250,12 @@ class jenga_env(gym.Env):
             plotting_process = Process(target=self.plot_force_data, args=(self.force_data_q,))
             plotting_process.start()
 
+        if self.plot_env_state:
+            self.env_state_data_q = Queue()
+            state_plotting_process = Process(target=self.plot_env_state_data, args=(self.env_state_data_q,))
+            state_plotting_process.start()
+
+
         # start force data plotting
         # if self.plot_force:
         #     plotting_thread = Thread(target=self.plot_force_data, daemon=True)
@@ -259,8 +269,10 @@ class jenga_env(gym.Env):
         log.debug(f"Simulation thread started!")
 
         # wait until pusher and extractor are initialized
-        while self.pusher is None or self.extractor is None:
+        while self.pusher is None or self.extractor is None or self.tower is None:
             time.sleep(0.1)
+
+        self.positions_from_last_step = copy.deepcopy(self.tower.ref_positions)
 
         log.debug(f"Pusher and extractor are ready!")
 
@@ -373,6 +385,80 @@ class jenga_env(gym.Env):
             self.force_data_q.put(self.g_sensor_data_queue)
         else:
             self.force_data_q.put(self.g_sensor_data_queue)
+
+    def plot_env_state_data(self, env_state_data_q):
+        def animate_state_data(i):
+            if not env_state_data_q.empty():
+                data = env_state_data_q.get()
+            else:
+                return
+
+            states = [i[0] for i in data]
+            rewards = [i[1] for i in data]
+
+            forces = [i[0] for i in states]
+            block_displacements = [i[1] for i in states]
+            total_displacements = [i[2] for i in states]
+            current_step_tower_disp = [i[3] for i in states]
+            current_round_tower_disp = [i[4] for i in states]
+            current_step_max_disp = [i[5] for i in states]
+            block_height = [i[6] for i in states]
+
+            ys = []
+            ys.append(current_step_tower_disp)
+            ys.append(current_step_max_disp)
+            ys.append(block_displacements)
+            ys.append(forces)
+            ys.append(rewards)
+
+            axes_titles = ['Current step average displacement', 'Current step max displacement', 'Block displacement', 'Force', 'Reward']
+
+
+            y_limits = []
+            y_limits.append([-1, 3])
+            y_limits.append([-1, 3])
+            y_limits.append([-1, 3])
+            y_limits.append([-0.3, 0.7])
+            y_limits.append([-5, 5])
+            y_limits.append([-0.5, 0.5])
+
+            # x-data
+            xs = range(0, len(forces))
+
+            # update plots
+
+            for i in range(n):
+                axs[i].clear()
+                axs[i].set_ylim(y_limits[i])
+                axs[i].title.set_text(axes_titles[i])
+                axs[i].plot(xs, ys[i])
+
+        # define plot for the force data plotting
+        n = 5
+        state_figure, axs = plt.subplots(nrows=3, ncols=2)
+        axs = np.reshape(axs, (6,))
+
+        # state_figure = plt.figure()
+        # axes = []
+        # for i in range(1, rows_n + 1):
+        #     ax = state_figure.add_subplot(rows_n, 2, i)
+        #     axes.append(ax)
+        state_figure.tight_layout()
+
+        ani = animation.FuncAnimation(state_figure, animate_state_data, interval=1)
+        plt.show()
+
+    def update_env_state_plot(self, state, reward):
+        if len(self.g_state_data_queue) >= self.g_state_data_queue_maxsize:
+            self.g_state_data_queue.pop(0)
+        self.g_state_data_queue.append((state, reward))
+        if not self.env_state_data_q.empty():
+            # self.force_data_q.get()
+            self.env_state_data_q.put(self.g_state_data_queue)
+        else:
+            self.env_state_data_q.put(self.g_state_data_queue)
+
+
 
     def start_keyboard_listener(self):
         listener = keyboard.Listener(
@@ -495,11 +581,11 @@ class jenga_env(gym.Env):
         positions = self.tower.get_positions()
         orientations = self.tower.get_orientations()
         log.debug(f"After get positions")
-        block_id = self.tower.get_block_id_from_pos(lvl, pos, positions, orientations)
+        block_id = self.tower.get_block_id_from_pos(lvl, pos, positions, orientations, coordinate_axes_pos)
         log.debug(f"After get block id from pos")
         if block_id is not None:
             log.debug(f"Before pusher move to block")
-            self.pusher.move_to_block_push(block_id)
+            self.pusher.move_to_block(block_id)
             log.debug(f"After pusher move to block")
             self.current_block_id = block_id
         else:
@@ -560,7 +646,7 @@ class jenga_env(gym.Env):
         log.debug(f"Move to random block #3")
         return True
 
-    def get_state(self, new_block, force=0, block_displacement=0, mode=0):
+    def get_state_advanced(self, new_block, force=0, block_displacement=0, mode=0):
         """
         mode=0: return gym compatible state
         mode=1: return state as State class
@@ -588,21 +674,22 @@ class jenga_env(gym.Env):
 
             # calculate tilt
             log.debug(f"Before get tilt")
-            tilt_2ax = self.tower.get_tilt_2ax(block_positions, self.current_block_id)
+            tilt_2ax = self.tower.get_tilt_2ax(block_positions, block_orientations, self.current_block_id)
             log.debug(f"After get tilt")
             if new_block:
                 self.initial_tilt_2ax = tilt_2ax
                 self.previous_step_displacement = np.array([0, 0])
                 self.previous_step_z_rot = 0
+                self.positions_from_last_step = copy.deepcopy(block_positions)
             last_tilt_2ax = tilt_2ax - self.initial_tilt_2ax
 
             # get last z_rotation
             log.debug(f"Before get z rotaiton")
-            z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block)
+            z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block, block_orientations)
             log.debug(f"After get z rotaiton")
 
             # get current round displacement
-            current_round_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions)
+            current_round_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions, block_orientations)
             log.debug(f"After get displacement")
 
             # get last step tower displacement and z rotation
@@ -625,7 +712,7 @@ class jenga_env(gym.Env):
             # 3) x□□
             # 4) x□x
             log.debug(f"Before get layers state")
-            layers = self.tower.get_layers_state(block_positions, block_orientations)
+            layers = self.tower.get_layers_state(block_positions, block_orientations, coordinate_axes_pos)
             log.debug(f"After get layers state")
             current_layer = layers[self.current_lvl]
             print(f"Current layer: {current_layer}")
@@ -650,6 +737,7 @@ class jenga_env(gym.Env):
                              current_round_displacement[1], last_tilt_2ax[0], last_tilt_2ax[1], current_step_z_rot,
                              z_rotation_last, side, block_height, self.current_lvl_pos, layer_configuration])
             log.debug(f"Get state#2")
+
             return state
 
         if mode == 1:
@@ -697,6 +785,167 @@ class jenga_env(gym.Env):
 
             log.debug(f"{state}")
 
+    def get_state(self, new_block, force=0, block_displacement=0, mode=0):
+        """
+        mode=0: return gym compatible state
+        mode=1: return state as State class
+        """
+
+        if mode == 0:
+
+            log.debug(f"Get state#1")
+
+            # pause simulation
+            self.pause()
+
+            # calculate side
+            side = None
+            if self.current_block_id % 6 < 3:
+                side = 0
+            else:
+                side = 1
+
+            # get block positions
+            log.debug(f"Before get positions")
+            block_positions = self.tower.get_positions()
+            block_orientations = self.tower.get_orientations()
+            log.debug(f"After get positions")
+
+            # calculate tilt
+            log.debug(f"Before get tilt")
+            tilt_2ax = self.tower.get_tilt_2ax(block_positions, block_orientations, self.current_block_id)
+            log.debug(f"After get tilt")
+            if new_block:
+                self.initial_tilt_2ax = tilt_2ax
+                self.previous_step_displacement = np.array([0, 0])
+                self.previous_step_z_rot = 0
+                self.positions_from_last_step = copy.deepcopy(block_positions)
+            last_tilt_2ax = tilt_2ax - self.initial_tilt_2ax
+
+            # get last z_rotation
+            log.debug(f"Before get z rotaiton")
+            z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block, block_orientations)
+            log.debug(f"After get z rotaiton")
+
+            # get current round displacement
+            current_round_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions, block_orientations)
+            log.debug(f"After get displacement")
+
+            # get max displacement
+            current_round_block_max_displacement = self.tower.get_last_max_displacement_2ax(self.current_block_id,
+                                                                                            block_positions,
+                                                                                            block_orientations)
+
+            # get last step tower displacement and z rotation
+            current_step_tower_displacement = np.linalg.norm(
+                self.get_last_step_avg_disp(block_positions, block_orientations))
+            current_step_max_displacement = max(0, np.linalg.norm(
+                self.get_last_step_max_disp(block_positions, block_orientations)) - 1)
+
+            # get last step tower displacement and z rotation
+            # current_step_tower_displacement = current_round_displacement - self.previous_step_displacement
+            # current_step_z_rot = z_rotation_last - self.previous_step_z_rot
+
+            # reset previous displacement and z rotation
+            self.previous_step_displacement = current_round_displacement
+            self.previous_step_z_rot = z_rotation_last
+
+            total_block_distance = self.total_distance
+
+            # get block height
+            block_height = block_positions[self.current_block_id][2] / one_millimeter
+
+            # get layer configuration
+            # 0) □□□
+            # 1) □x□
+            # 2) □□x
+            # 3) x□□
+            # 4) x□x
+            log.debug(f"Before get layers state")
+            layers = self.tower.get_layers_state(block_positions, block_orientations, coordinate_axes_pos)
+            log.debug(f"After get layers state")
+            current_layer = layers[self.current_lvl]
+            print(f"Current layer: {current_layer}")
+            layer_configuration = 0
+            if current_layer[0] is not None and current_layer[1] is not None and current_layer[2] is not None:
+                layer_configuration = 0
+            elif current_layer[0] is not None and current_layer[2] is not None:
+                layer_configuration = 1
+            elif current_layer[0] is not None and current_layer[1] is not None:
+                layer_configuration = 2
+            elif current_layer[1] is not None and current_layer[2] is not None:
+                layer_configuration = 3
+            elif current_layer[1] is not None:
+                layer_configuration = 4
+
+            # resume simulation
+            self.resume()
+
+            # normalize state
+            state = np.array([force,
+                              block_displacement,
+                              total_block_distance,
+                              current_step_tower_displacement,
+                              np.linalg.norm(current_round_displacement),
+                              current_step_max_displacement,
+                              block_height,
+                              self.current_lvl_pos,
+                              layer_configuration])
+            log.debug(f"Get state#2")
+
+            return state
+
+        if mode == 1:
+            block_positions = self.tower.get_positions()
+
+            start_time_total = time.time()
+            start_time = time.time()
+            tilt = self.tower.get_tilt_2ax(block_positions, self.current_block_id)
+            elapsed_time = time.time() - start_time
+            # log.debug(f"Tilt time: {elapsed_time*1000:.2f}")
+
+            start_time = time.time()
+            displacement_total = self.tower.get_abs_displacement_2ax(self.pusher.current_block, block_positions)
+            elapsed_time = time.time() - start_time
+            # log.debug(f"Abs displacement time: {elapsed_time*1000:.2f}")
+
+            start_time = time.time()
+            current_round_displacement = self.tower.get_last_displacement_2ax(self.pusher.current_block, block_positions)
+            elapsed_time = time.time() - start_time
+            # log.debug(f"Last displacement time: {elapsed_time*1000:.2f}")
+
+            start_time = time.time()
+            z_rotation_total = self.tower.get_total_z_rotation(self.pusher.current_block)
+            elapsed_time = time.time() - start_time
+            # log.debug(f"Total rotation time: {elapsed_time*1000:.2f}")
+
+            start_time = time.time()
+            z_rotation_last = self.tower.get_last_z_rotation(self.pusher.current_block)
+            elapsed_time = time.time() - start_time
+            # log.debug(f"Last rotation time: {elapsed_time*1000:.2f}")
+
+            status = Status.pushing
+            self.total_distance += block_displacement
+
+            start = time.time()
+            tower_state = self.tower.get_layers_state(block_positions)
+            elapsed = time.time() - start
+            # log.debug(f"Layers state time: {elapsed*1000:.2f}")
+
+            elapsed_time_total = time.time() - start_time_total
+            # log.debug(f"Elapsed time total: {elapsed_time_total*1000:.2f}")
+
+            state = State(tower_state, force, block_displacement, self.total_distance, tilt,
+                          displacement_total, current_round_displacement, z_rotation_total, z_rotation_last, status)
+
+            log.debug(f"{state}")
+
+    def get_last_step_avg_disp(self, positions, orientations):
+        return self.tower._get_displacement_2ax(self.current_block_id, self.positions_from_last_step, positions, orientations)
+
+    def get_last_step_max_disp(self, positions, orientations):
+        return self.tower._get_last_max_displacement_2ax(self.current_block_id, self.positions_from_last_step, positions, orientations)
+
     def compute_reward_old(self, block_displacement, tower_displacement, tower_z_rotation, tower_tilt):
         tower_displacement_1ax = np.linalg.norm(tower_displacement)
         tower_tilt_1ax = np.linalg.norm(tower_tilt)
@@ -706,7 +955,7 @@ class jenga_env(gym.Env):
 
         return reward
 
-    def compute_reward(self, state, normalize):
+    def compute_reward_old2(self, state, normalize):
         block_displacement = state[1]
         tilt = state[7:9]
         current_step_tower_displacement = state[3:5]
@@ -718,6 +967,22 @@ class jenga_env(gym.Env):
         coefficients = np.array([1, -1.5, -1, -2])
 
         reward = sum(coefficients * np.array([block_displacement, tower_displacement_1ax, tower_tilt_1ax, z_rot]))
+
+        # normalize reward
+        if normalize:
+            reward = self.normalize_reward(reward)
+
+        return reward
+
+    def compute_reward(self, state, normalize):
+        block_displacement = state[1]
+        current_step_tower_displacement = state[3]
+        current_step_max_displacement = state[5]
+
+        tower_displacement_1ax = np.linalg.norm(current_step_tower_displacement)
+        coefficients = np.array([1, -6, -3])
+
+        reward = sum(coefficients * np.array([block_displacement, tower_displacement_1ax, current_step_max_displacement]))
 
         # normalize reward
         if normalize:
@@ -769,6 +1034,10 @@ class jenga_env(gym.Env):
             # wait until tower stabilizes
             self.sleep_simtime(2)
             log.debug(f"Jenga step#4")
+
+            if self.plot_env_state:
+                self.update_env_state_plot(state, reward)
+
             return state, reward, done, info
 
         if action == 1:
@@ -807,6 +1076,9 @@ class jenga_env(gym.Env):
 
                 # wait until tower stabilizes
                 self.sleep_simtime(2)
+
+                if self.plot_env_state:
+                    self.update_env_state_plot(state, reward)
 
                 log.debug(f"Jenga step#7")
                 return state, reward, done, info
@@ -861,6 +1133,9 @@ class jenga_env(gym.Env):
                 self.last_reward = reward
 
                 log.debug(f"Jenga step#9")
+
+                if self.plot_env_state:
+                    self.update_env_state_plot(state, reward)
 
                 return state, reward, done, info
 
@@ -1285,11 +1560,7 @@ class jenga_env_wrapper(gym.Env):
 
 if __name__ == "__main__":
 
-    try:
-        a = 1 / 0
-    except:
-        log.exception("Test exception")
-
+    pass
 
     # start_total_time = time.time()
     #

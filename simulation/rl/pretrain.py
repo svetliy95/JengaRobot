@@ -15,6 +15,7 @@ from time import gmtime, strftime
 import logging
 import os
 import json
+from play import jenga_env
 
 
 log = logging.Logger(__name__)
@@ -103,8 +104,8 @@ def write_results_json(epochs, model_id, run, result, filename):
 
 # env = jenga_env_wrapper(normalize=True)
 dataset = ExpertDataset(expert_path='/home/bch_svt/cartpole/simulation/rl/expert_data/combined_expert_data_(8)_layer_state_normalized.npz', verbose=1)
-runs_per_model = 8
-models_num = 5
+runs_per_model = 1
+models_num = 1
 threads_num = 1
 timeout = 900
 seeds = [16041995, 14021996]
@@ -171,7 +172,7 @@ for epochs in [1000, 900, 800, 700, 600, 500, 400]:
         # model = PPO2('MlpPolicy', env, verbose=1)
         # model.pretrain(dataset, n_epochs=epochs)
         # model.save(f'./models/model_{epochs}epochs_#{i}')
-        model = PPO2.load('8games_1000epochs')
+        model = PPO2.load('/home/bch_svt/cartpole/simulation/rl/models/model_900epochs_#3.zip')
         models.append(model)
     for m in range(len(models)):
         results = []

@@ -1,7 +1,7 @@
 import numpy as np
 from constants import *
 from pyquaternion import Quaternion
-from scipy.stats import truncnorm
+from scipy.stats import truncnorm, norminvgauss
 from cv.block_localization import get_block_positions_mujoco, get_camera_params_mujoco, get_block_positions
 import cv2
 import math
@@ -11,6 +11,7 @@ import logging
 import colorlog
 import copy
 import random
+import traceback
 # from mujoco_py import MjRenderContextOffscreen
 
 # specify logger
@@ -54,7 +55,7 @@ class Tower:
     pos_sigma = (position_error / n_sigma) / math.sqrt(3)
     orientation_sigma = 2/3
 
-    def __init__(self, sim=None, viewer=None, simulation_fl=True, cam1=None, cam2=None, at_detector=None, block_sizes=None, corrections=None):
+    def __init__(self, sim=None, viewer=None, simulation_fl=True, cam1=None, cam2=None, at_detector1=None, at_detector2=None, block_sizes=None, corrections=None):
 
         if simulation_fl:
             log.debug(f"Init #1")
@@ -69,6 +70,7 @@ class Tower:
             self.ref_orientations = copy.deepcopy(orientations)
             self.last_ref_orientations = copy.deepcopy(orientations)
             self.toppled_fl = False
+            self.initial_pos = self.get_center_xy(positions)
             log.debug(f"Init #2")
         else:
 
@@ -78,7 +80,8 @@ class Tower:
 
             self.cam1 = cam1
             self.cam2 = cam2
-            self.at_detector = at_detector
+            self.at_detector1 = at_detector1
+            self.at_detector2 = at_detector2
             self.block_sizes = block_sizes
             self.corrections = corrections
             self.target_tag_size = 9.6
@@ -107,6 +110,7 @@ class Tower:
             self.last_ref_orientations = copy.deepcopy(orientations)
             self.toppled_fl = False
             self.initial_pos = self.get_center_xy(positions)
+            self.previous_poses = []
 
 
     def reset_orientations(self, orientations):
@@ -142,7 +146,12 @@ class Tower:
         exact_pos = copy.deepcopy(self.sim.data.get_body_xpos(self.block_prefix + str(num)))
         if Tower.pertrubation:
             start = time.time()
-            distorted_pos = random.gauss(exact_pos, self.pos_sigma)
+            dist = norminvgauss
+            distortion_x = dist.rvs(x_error_dist_params[0], x_error_dist_params[1], x_error_dist_params[2], x_error_dist_params[3])
+            distortion_y = dist.rvs(y_error_dist_params[0], y_error_dist_params[1], y_error_dist_params[2], y_error_dist_params[3])
+            distortion_z = dist.rvs(z_error_dist_params[0], z_error_dist_params[1], z_error_dist_params[2], z_error_dist_params[3])
+
+            distorted_pos = exact_pos + np.array([distortion_x, distortion_y, distortion_z])
             elapsed = time.time() - start
             # log.info(f"Position elapsed: {elapsed * 1000:.2f}ms")
             # log.info(f"Position error: {np.linalg.norm(distorted_pos - exact_pos)/one_millimeter}")
@@ -156,10 +165,12 @@ class Tower:
 
         if Tower.pertrubation:
             start = time.time()
-            q_distorted = exact_orientation * \
-                          Quaternion(axis=[1, 0, 0], degrees=random.gauss(0, self.orientation_sigma)) * \
-                          Quaternion(axis=[0, 1, 0], degrees=random.gauss(0, self.orientation_sigma)) * \
-                          Quaternion(axis=[0, 0, 1], degrees=random.gauss(0, self.orientation_sigma))
+            dist = norminvgauss
+            distortion_a = dist.rvs(a_error_dist_params[0], a_error_dist_params[1], a_error_dist_params[2], a_error_dist_params[3])
+            distortion_b = dist.rvs(b_error_dist_params[0], b_error_dist_params[1], b_error_dist_params[2], b_error_dist_params[3])
+            distortion_c = dist.rvs(c_error_dist_params[0], c_error_dist_params[1], c_error_dist_params[2], c_error_dist_params[3])
+            distortion_d = dist.rvs(d_error_dist_params[0], d_error_dist_params[1], d_error_dist_params[2], d_error_dist_params[3])
+            q_distorted = Quaternion(exact_orientation.q + np.array([distortion_a, distortion_b, distortion_c, distortion_d]))
             elapsed = time.time() - start
             # log.info(f"Orinetation elapsed: {elapsed*1000:.2f}ms")
             # log.info(f"Orientation error: {math.degrees(get_angle_between_quaternions(q_distorted, exact_orientation))}")
@@ -228,31 +239,52 @@ class Tower:
     def get_poses_cv(self):
         cam_params1 = self.cam1.get_params()
         cam_params2 = self.cam2.get_params()
-        im1 = self.cam1.get_raw_image()
-        im2 = self.cam2.get_raw_image()
-        cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im1)
-        self.image_index += 1
-        cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im2)
-        self.image_index += 1
-        block_ids = [i for i in range(54)]
-        poses = get_block_positions(im1, im2, block_ids, self.target_tag_size, self.ref_tag_size, self.ref_tag_id, self.ref_tag_pos,
-                                     self.block_sizes, self.corrections,
-                                     cam_params1, cam_params2, False, self.at_detector, cam1_mtx, cam1_dist, cam2_mtx,
-                                     cam2_dist)
 
-        if poses is not None:
-            for id in poses:
-                block_pos = poses[id]['pos']
-                block_quat = poses[id]['orientation']
+        poses_list = []
 
-                block_pos, block_quat = self.swap_coordinates(block_pos, block_quat)
-                block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0],
-                                                                                               degrees=-90)
-                poses[id]['pos'] = block_pos
-                poses[id]['orientation'] = block_quat * self.orientation_corrections[id]
+        for i in range(2):
+            im1 = self.cam1.get_raw_image()
+            im2 = self.cam2.get_raw_image()
+            cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im1)
+            self.image_index += 1
+            cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im2)
+            self.image_index += 1
+            block_ids = [i for i in range(54)]
+            poses = get_block_positions(im1, im2, block_ids, self.target_tag_size, self.ref_tag_size, self.ref_tag_id, self.ref_tag_pos,
+                                         self.block_sizes, self.corrections,
+                                         cam_params1, cam_params2, False, self.at_detector1, self.at_detector2, cam1_mtx, cam1_dist, cam2_mtx,
+                                         cam2_dist)
+
+            if poses is not None:
+                for id in poses:
+                    block_pos = poses[id]['pos']
+                    block_quat = poses[id]['orientation']
+
+                    block_pos, block_quat = self.swap_coordinates(block_pos, block_quat)
+                    block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0],
+                                                                                                   degrees=-90)
+                    poses[id]['pos'] = block_pos
+                    poses[id]['orientation'] = block_quat * self.orientation_corrections[id]
+
+            poses_list.append(poses)
+
+        averaged_poses = {}
+        for id in poses_list[0]:
+            poss = [poses_list[0][id]['pos']]
+            qs = [poses_list[0][id]['orientation']]
+            tags_detected = poses_list[0][id]['tags_detected']
+            for poses in poses_list[1:]:
+                if id in poses:
+                    poss.append(poses[id]['pos'])
+                    qs.append(poses[id]['orientation'])
+                    tags_detected = min(tags_detected, poses[id]['tags_detected'])
+            pos = np.mean(np.array(poss), axis=0)
+            q = average_quaternions(qs)
+            averaged_poses[id] = {'pos': pos, 'orientation': q, 'tags_detected': tags_detected}
 
 
-        return poses
+
+        return averaged_poses
 
     def swap_coordinates(self, pos, quat):
         quat = Quaternion([quat[0], quat[2], quat[1], -quat[3]])
@@ -399,9 +431,14 @@ class Tower:
         return np.mean(heights)
 
     def mean_orientation(self, layer, orientations):
+
+        quaternions = {}
+        for i in orientations:
+            quaternions[i] = Quaternion(orientations[i])
+
         layer_orientations = []
         for block_id in layer:
-            layer_orientations.append(orientations[block_id])
+            layer_orientations.append(quaternions[block_id])
         mean_orientation = average_quaternions(layer_orientations)
 
         return mean_orientation
@@ -545,8 +582,8 @@ class Tower:
 
             # calculate center of the tower
             tower_center = self.get_center_xy(positions)
-            tower_center_with_height = np.concatenate(
-                (tower_center, np.array([highest_full_layer_height + block_height_max])))
+            tower_center_with_height = tower_center
+            tower_center_with_height[2] = highest_full_layer_height + block_height_max
 
             # calculate centers for each position
             offset_orientation = mean_orientation
@@ -925,14 +962,21 @@ class Tower:
 
     def toppled(self, positions, current_block):
         counter = 0
-        for i in range(g_blocks_num):
+        for i in positions:
             if i != current_block:
-                distance_vector = positions[i][0:2] - self.pos[0:2]
+                distance_vector = positions[i][0:2] - self.initial_pos[0:2]
                 distance = np.linalg.norm(distance_vector)
                 if distance >= toppled_distance:
                     counter += 1
 
         if counter > toppled_block_threshold or self.toppled_fl:
+            print(f"Counter of fallen blocks: {counter}")
+            for i in positions:
+                if i != current_block:
+                    distance_vector = positions[i][0:2] - self.initial_pos[0:2]
+                    distance = np.linalg.norm(distance_vector)
+                    if distance >= toppled_distance:
+                        print(f"Fallen block: {i} with distance: {distance}")
             return True
         else:
             return False
@@ -1072,6 +1116,67 @@ class Tower:
 
     def get_abs_displacement_1ax(self, current_block, positions, orientations):
         return self._get_displacement_1ax(current_block, self.ref_positions, positions, orientations)
+
+    def get_last_max_displacement_2ax(self, current_block, positions, orientations):
+        return self._get_last_max_displacement_2ax(current_block, self.last_ref_positions, positions, orientations)
+
+    def get_last_max_displacement_1ax(self, current_block, positions, orientations):
+        return self._get_last_max_displacement_1ax(current_block, self.last_ref_positions, positions, orientations)
+
+    def _get_last_max_displacement_2ax(self, current_block, ref_pos, positions, orientations):
+        displacements = []  # a list of displacement vectors
+        for i in positions:
+            if i != current_block:
+                displacements.append(positions[i] - ref_pos[i])
+
+        # calculate mean
+        displacement = np.array([0, 0, 0])
+        max_displacement = 0
+        for d in displacements:
+            if np.linalg.norm(d) > max_displacement:
+                max_displacement = np.linalg.norm(d)
+                displacement = d
+
+        log.debug(f"Max displacement: {displacement/one_millimeter}")
+
+        # calculate base vectors
+        lowest_layer = self.get_lowest_layer(positions)
+        log.debug(f"Lowest layer: {lowest_layer}")
+        x = []
+        y = []
+        for id in lowest_layer:
+            orientation = Quaternion(orientations[id])
+            x.append(orientation.rotate(x_unit_vector))
+            y.append(orientation.rotate(y_unit_vector))
+        x_axis_base = self.mean_vector(x)
+        y_axis_base = self.mean_vector(y)
+        log.debug(f"X base: {x_axis_base}")
+        log.debug(f"Y base: {y_axis_base}")
+
+        proj_x = orth_proj(x_axis_base, displacement)
+        proj_x_sign = 1 if np.sign(proj_x[0]) == np.sign(x_axis_base[0]) else -1
+        proj_y = orth_proj(y_axis_base, displacement)
+        proj_y_sign = 1 if np.sign(proj_y[0]) == np.sign(y_axis_base[0]) else -1
+        log.debug(f"X_proj: {proj_x}")
+        log.debug(f"Y_proj: {proj_y}")
+
+        displacement_x = proj_x_sign * np.linalg.norm(proj_x)
+        displacement_y = proj_y_sign * np.linalg.norm(proj_y)
+
+        return np.array([displacement_x, displacement_y]) / one_millimeter
+
+    def _get_last_max_displacement_1ax(self, current_block, ref_pos, positions, orientations):
+        displacements = []  # a list of displacement vectors
+        for i in positions:
+            if i != current_block:
+                displacements.append(positions[i] - ref_pos[i])
+
+        max_disp = 0
+        for d in displacements:
+            if np.linalg.norm(d) > max_disp:
+                max_disp = np.linalg.norm(d)
+
+        return max_disp
 
     def _get_z_rotation(self, current_block, actual_orientations, ref_orientations):
         angles = []

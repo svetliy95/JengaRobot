@@ -247,19 +247,42 @@ def set_block_poses(cam1, cam2, detector, block_sizes):
                 sim.data.set_mocap_pos(f'block_{id}', block_pos)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
 
-def set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl):
+def set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl):
     cam_params1 = cam1.get_params()
     cam_params2 = cam2.get_params()
+    start = time.time()
     im1 = cam1.get_raw_image()
+    elapsed = time.time() - start
+    print(f'Cam1 image time: {elapsed*1000:.2f}ms')
+    start = time.time()
     im2 = cam2.get_raw_image()
+    elapsed = time.time() - start
+    print(f'Cam2 image time: {elapsed * 1000:.2f}ms')
     blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
     block_ids = [i for i in range(54)]
+    start = time.time()
     poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
-                        cam_params1, cam_params2, False, detector, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
+                        cam_params1, cam_params2, False, detector1, detector2, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
+    elapsed = time.time() - start
+    print(f'Detection time: {elapsed * 1000:.2f}ms')
 
     # poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
     #                             block_sizes, corrections,
     #                             cam_params1, cam_params2, False, detector)
+
+    if last_poses:
+        displacements = []
+        for i in poses1:
+            d = np.linalg.norm(poses1[i]['pos'][:2] - last_poses[i]['pos'][:2])
+            displacements.append(d)
+
+        displacements.sort()
+        max_displacements.append(max(displacements))
+        print(f"Displacements:")
+        print(displacements)
+
+    for i in poses1:
+        last_poses[i] = poses1[i]
 
     tag_height = np.array([0, 0, 2]) * scaler
     if poses1 is not None:
@@ -334,7 +357,7 @@ def get_shild_pose_mujoco(tag_id, im, detector):
 def update_shild_pos():
     while True:
         start = time.time()
-        set_block_poses_debug(cam1, cam2, detector, block_sizes, cali_fl=calibration_mode)
+        set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl=calibration_mode)
         stop = time.time()
         print(f"Pose estimation time: {(stop-start)*1000:.2f}ms")
 
@@ -423,10 +446,18 @@ if __name__ == '__main__':
     cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
     # cam1.start_grabbing()
     # cam2.start_grabbing()
-    detector = dt_apriltags.Detector(nthreads=detection_threads,
-                                     quad_decimate=quad_decimate,
-                                     quad_sigma=quad_sigma,
-                                     decode_sharpening=decode_sharpening)
+    detector1 = dt_apriltags.Detector(nthreads=detection_threads,
+                                     quad_decimate=quad_decimate1,
+                                     quad_sigma=quad_sigma1,
+                                     decode_sharpening=decode_sharpening1)
+
+    detector2 = dt_apriltags.Detector(nthreads=detection_threads,
+                                      quad_decimate=quad_decimate2,
+                                      quad_sigma=quad_sigma2,
+                                      decode_sharpening=decode_sharpening2)
+
+    last_poses = dict()
+    max_displacements = []
 
     # get corrections
     corrections = read_corrections('corrections.json')
@@ -461,7 +492,7 @@ if __name__ == '__main__':
     estimated_shield_pos = np.array([0, 0, 0])
 
     # simulate
-    while True:
+    while t < 100000:
         t += 1
 
         if t % 100 == 0:
@@ -483,6 +514,11 @@ if __name__ == '__main__':
 
         if t > 100 and os.getenv('TESTING') is not None:
             break
+
+    print(f"Max displacements: {max_displacements}")
+    print(f"Max displacements mean: {np.mean(max_displacements)}")
+
+    exit()
 
     dataset = []
     for id in measured_poses:

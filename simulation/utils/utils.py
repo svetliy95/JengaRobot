@@ -5,6 +5,7 @@ from constants import *
 import traceback
 from scipy import stats
 from averaging_quaternions.averageQuaternions import averageQuaternions
+from scipy.linalg import sqrtm, inv
 
 
 def point_projection_on_line(line_point1, line_point2, point):
@@ -262,6 +263,10 @@ def euler2quat(euler, degrees):
            Quaternion(axis=y_unit_vector, radians=b) * \
            Quaternion(axis=x_unit_vector, radians=a)
     return quat
+
+
+def orthogonalize_matrix(M):
+    return M.dot(inv(sqrtm(M.T.dot(M))))
 
 class Line:
     def __init__(self, p1, p2):

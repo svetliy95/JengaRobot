@@ -7,6 +7,7 @@ from time import gmtime, strftime
 from pynput import keyboard
 import os
 import time
+from play import jenga_env
 
 def start_keyboard_listener():
     listener = keyboard.Listener(
@@ -34,6 +35,7 @@ def expert_input(obs):
 action = None
 
 # create environment
+# env = jenga_env(normalize=False)
 env = jenga_env_wrapper(normalize=False)
 
 # start keyboard listener
