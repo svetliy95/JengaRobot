@@ -1,0 +1,2 @@
+model_checkpoint_path: "loose_blocks_model"
+all_model_checkpoint_paths: "loose_blocks_model"
