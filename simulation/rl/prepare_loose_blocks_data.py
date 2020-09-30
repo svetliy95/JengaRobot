@@ -176,8 +176,8 @@ def augment_data(x, y):
         sample = np.array(choice(category_1))
 
         # subtract height from loose block and add equal amount to others
-        d_h_positive = d_h_const * random()
-        d_h_negative = -d_h_const * random()
+        d_h_positive = d_h_const * random() - d_h_const/2
+        d_h_negative = -d_h_const * random() + d_h_const/2
 
         sample[0] += d_h_negative
         sample[1:] += d_h_positive
@@ -192,9 +192,9 @@ def augment_data(x, y):
         sample = np.array(choice(category_2))
 
         # subtract from loose blocks and add to other
-        d_h_positive1 = d_h_const * random()
-        d_h_positive2 = d_h_const * random()
-        d_h_negative = -d_h_const * random()
+        d_h_positive1 = d_h_const * random() - d_h_const/2
+        d_h_positive2 = d_h_const * random() - d_h_const/2
+        d_h_negative = -d_h_const * random() + d_h_const/2
         sample[0] += d_h_positive1
         sample[1] += d_h_negative
         sample[2] += d_h_positive2
@@ -209,9 +209,9 @@ def augment_data(x, y):
         sample = np.array(choice(category_3))
 
         # subtract from loose block and add to others
-        d_h_positive = d_h_const * random()
-        d_h_negative1 = -d_h_const * random()
-        d_h_negative2 = -d_h_const * random()
+        d_h_positive = d_h_const * random() - d_h_const/2
+        d_h_negative1 = -d_h_const * random() + d_h_const/2
+        d_h_negative2 = -d_h_const * random() + d_h_const/2
         sample[0] += d_h_negative1
         sample[1] += d_h_positive
         sample[2] += d_h_negative2
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     # dataset ready!
 
     x, y = read_data()
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.90)
     x, y = augment_data(x_train, y_train)
     x, y = add_one_hot(x, y)
     x, y, mean, std = prepare_data(x, y)
@@ -321,11 +321,11 @@ if __name__ == "__main__":
     log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     tensorboard_callback = keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-    model.fit(x=x, y=y, nb_epoch=2, verbose=1, validation_split=0.2, shuffle=True, callbacks=[es])
+    # model.fit(x=x, y=y, nb_epoch=5, verbose=1, validation_split=0.2, shuffle=True, callbacks=[es])
+    #
+    # model.save_weights('loose_blocks_model_093')
 
-    model.save_weights('loose_blocks_model')
-
-    model.load_weights('loose_blocks_model')
+    model.load_weights('loose_blocks_model_093')
 
 
     x, y = add_one_hot(x_test, y_test)
