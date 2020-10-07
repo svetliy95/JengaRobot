@@ -8,10 +8,10 @@ g_timestep = 0.005
 g_blocks_num = 48
 g_blocks_max = 54
 flipping_threshold = 30  # in degrees
-# scaler = 50
-# one_millimeter = 0.001 * scaler
-scaler = 1000
+scaler = 50
 one_millimeter = 0.001 * scaler
+# scaler = 1000
+# one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
 coordinate_axes_pos_x = -0.3 * scaler

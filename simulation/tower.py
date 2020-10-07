@@ -12,7 +12,7 @@ import colorlog
 import copy
 import random
 import traceback
-# from mujoco_py import MjRenderContextOffscreen
+from mujoco_py import MjRenderContextOffscreen
 
 # specify logger
 # DEBUG: Detailed information, typically of interest only when diagnosing problems.

@@ -199,7 +199,10 @@ def get_block_positions_mujoco(im1, im2, block_ids, target_tag_size, ref_tag_siz
             # 2nd approach
             left_tag_quat = Quaternion(matrix=left_tag_matrix)
             right_tag_quat = Quaternion(matrix=right_tag_matrix)
-            block_quat = Quaternion(np.mean([left_tag_quat, right_tag_quat]))
+
+            # average quaternions
+            block_quat = average_quaternions([left_tag_quat, right_tag_quat])
+
             positions[block_id] = {'pos': block_center,
                                    'orientation': block_quat.elements,
                                    'tags_detected': np.array([2])}

@@ -159,9 +159,10 @@ def remove_outliers(data, treshold=3):
     z_score = np.array(stats.zscore(data))
     idx1 = treshold > z_score
     idx2 = -treshold < z_score
-    data = data[np.logical_and(idx1, idx2)]
+    idxs = np.logical_and(idx1, idx2)
+    data = data[idxs]
 
-    return data
+    return data, idxs
 
 
 def translation_along_axis_towards_point(src_point, dst_point, axis, quat):

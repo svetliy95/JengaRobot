@@ -179,7 +179,7 @@ class jenga_env(gym.Env):
 
         # global flags
         self.render = render
-        self.on_screen_rendering = True
+        self.on_screen_rendering = False
         self.plot_force = False
         self.key_board_listener_fl = False
         self.screenshot_fl = False
@@ -1145,7 +1145,7 @@ class jenga_env(gym.Env):
     def debug_collect_localization_errors(self):
         true_positions = self.tower.get_positions()
         true_orientations = self.tower.get_orientations()
-        estimated_poses, _, _ = self.tower.get_poses_cv(return_images=True)
+        estimated_poses, _, _ = self.tower.get_poses_cv_mujoco(return_images=True)
         log.debug(estimated_poses)
         estimated_positions = {x: estimated_poses[x]['pos'] for x in estimated_poses}
         estimated_orientations = {x: estimated_poses[x]['orientation'] for x in estimated_poses}
@@ -1262,7 +1262,7 @@ class jenga_env(gym.Env):
                         pass
 
                     if self.t % 100 == 0 and self.render:
-                        # self.debug_collect_localization_errors()
+                        self.debug_collect_localization_errors()
                         pass
 
                     # render if on screen rendering
@@ -1559,6 +1559,13 @@ class jenga_env_wrapper(gym.Env):
 
 
 if __name__ == "__main__":
+
+    env = jenga_env()
+
+    env.pusher.move_along_own_axis('x', 10)
+
+    for i in range(100):
+        time.sleep(1)
 
     pass
 
