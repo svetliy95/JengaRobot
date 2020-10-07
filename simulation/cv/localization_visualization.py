@@ -16,6 +16,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib; matplotlib.use("TkAgg")
+from utils.utils import average_quaternions, get_angle_between_quaternions_3ax
 
 def generate_block_xml(id, size, cali: bool):
     length = size['length'] * scaler
@@ -247,24 +248,79 @@ def set_block_poses(cam1, cam2, detector, block_sizes):
                 sim.data.set_mocap_pos(f'block_{id}', block_pos)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
 
-def set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl):
+
+def get_averaged_poses(cam1, cam2, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections, at_detector1, at_detector2):
     cam_params1 = cam1.get_params()
     cam_params2 = cam2.get_params()
+
+    poses_list = []
+
+    for i in range(3):
+        im1 = cam1.get_raw_image()
+        im2 = cam2.get_raw_image()
+        # cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im1)
+        # self.image_index += 1
+        # cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im2)
+        # self.image_index += 1
+        block_ids = [i for i in range(54)]
+        poses = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
+                                     block_sizes, corrections,
+                                     cam_params1, cam_params2, False, at_detector1, at_detector2, cam1_mtx, cam1_dist, cam2_mtx,
+                                     cam2_dist)
+
+        if poses is not None:
+            for id in poses:
+                block_pos = poses[id]['pos']
+                block_quat = poses[id]['orientation']
+
+                block_pos, block_quat = swap_coordinates_normal(block_pos, block_quat)
+                block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0],
+                                                                                               degrees=-90)
+                poses[id]['pos'] = block_pos
+                poses[id]['orientation'] = block_quat
+
+        poses_list.append(poses)
+
+    averaged_poses = {}
+    for id in poses_list[0]:
+        poss = [poses_list[0][id]['pos']]
+        qs = [poses_list[0][id]['orientation']]
+        tags_detected = poses_list[0][id]['tags_detected']
+        for poses in poses_list[1:]:
+            if id in poses:
+                poss.append(poses[id]['pos'])
+                qs.append(poses[id]['orientation'])
+                tags_detected = min(tags_detected, poses[id]['tags_detected'])
+        pos = np.mean(np.array(poss), axis=0)
+        q = average_quaternions(qs)
+        averaged_poses[id] = {'pos': pos, 'orientation': q, 'tags_detected': tags_detected}
+
+
+
+    return averaged_poses
+
+def set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl):
+    # cam_params1 = cam1.get_params()
+    # cam_params2 = cam2.get_params()
+    # start = time.time()
+    # im1 = cam1.get_raw_image()
+    # elapsed = time.time() - start
+    # print(f'Cam1 image time: {elapsed*1000:.2f}ms')
+    # start = time.time()
+    # im2 = cam2.get_raw_image()
+    # elapsed = time.time() - start
+    # print(f'Cam2 image time: {elapsed * 1000:.2f}ms')
+    # blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
+    # block_ids = [i for i in range(54)]
     start = time.time()
-    im1 = cam1.get_raw_image()
-    elapsed = time.time() - start
-    print(f'Cam1 image time: {elapsed*1000:.2f}ms')
-    start = time.time()
-    im2 = cam2.get_raw_image()
-    elapsed = time.time() - start
-    print(f'Cam2 image time: {elapsed * 1000:.2f}ms')
-    blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
-    block_ids = [i for i in range(54)]
-    start = time.time()
-    poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
-                        cam_params1, cam_params2, False, detector1, detector2, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
+    # poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
+    #                     cam_params1, cam_params2, False, detector1, detector2, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
+    poses1 = get_averaged_poses(cam1, cam2, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
+                                detector1, detector2)
     elapsed = time.time() - start
     print(f'Detection time: {elapsed * 1000:.2f}ms')
+
+
 
     # poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
     #                             block_sizes, corrections,
@@ -292,17 +348,21 @@ def set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl
                 block_quat = poses1[id]['orientation']
                 tags_detected = poses1[id]['tags_detected']
 
-                if calibration_mode:
-                    block_pos, block_quat = swap_coordinates_cali(block_pos, block_quat)
-                else:
-                    block_pos, block_quat = swap_coordinates_normal(block_pos, block_quat)
-
-                if not cali_fl:
-                    block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
+                # if calibration_mode:
+                #     block_pos, block_quat = swap_coordinates_cali(block_pos, block_quat)
+                # else:
+                #     block_pos, block_quat = swap_coordinates_normal(block_pos, block_quat)
+                #
+                # if not cali_fl:
+                #     block_quat = block_quat * Quaternion(axis=[1, 0, 0], degrees=180) * Quaternion(axis=[0, 1, 0], degrees=-90)
                 print(f"Block#{id} quat: {repr(block_quat)}")
 
                 sim.data.set_mocap_pos(f'block_{id}', block_pos + tag_height)
                 sim.data.set_mocap_quat(f'block_{id}', block_quat.q)
+
+                ##### evaluation save jitter data ########3
+                block_positions_jitter[id]['positions'].append(block_pos/scaler)
+                block_orientations_jitter[id]['orientations'].append(block_quat)
 
                 yelow = np.array([252, 186, 3, 255]) / 255
                 if tags_detected == 1:
@@ -315,6 +375,18 @@ def set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl
             else:
                 red = np.array([252, 50, 57, 255]) / 255
                 set_block_color(id, red, sim)
+
+    # if poses1 is not None:
+    #     for id in range(54):
+    #         if id in poses1:
+    #             block_pos = poses1[id]['pos']
+    #             block_quat = poses1[id]['orientation']
+    #             tags_detected = poses1[id]['tags_detected']
+
+                # block_positions_jitter[id]['positions'].append(block_pos)
+                # block_orientations_jitter[id]['orientations'].append(block_quat)
+
+
 
     # if poses2 is not None:
     #     for id in range(54):
@@ -440,6 +512,13 @@ if __name__ == '__main__':
     block_pos = np.array([0, 0, 100])
     block_quat = Quaternion([1, 0, 0, 0])
 
+    ## jitter evaluation
+    block_positions_jitter = {i: {'positions': [], 'height': 0} for i in range(54)}
+    block_orientations_jitter = {i: {'orientations': [], 'height': 0} for i in range(54)}
+
+
+
+
     # initialize camera and detector
     # cam = Camera(cam1_serial, cam1_mtx_11cm, cam1_dist_11cm)
     cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
@@ -473,7 +552,7 @@ if __name__ == '__main__':
 
 
     # start thread for position update
-    t = Thread(target=update_shild_pos)
+    t = Thread(target=update_shild_pos, daemon=True)
     t.start()
 
     # initialize simulation related variables
@@ -492,7 +571,7 @@ if __name__ == '__main__':
     estimated_shield_pos = np.array([0, 0, 0])
 
     # simulate
-    while t < 100000:
+    while len(block_positions_jitter[0]['positions']) < 200:
         t += 1
 
         if t % 100 == 0:
@@ -514,6 +593,44 @@ if __name__ == '__main__':
 
         if t > 100 and os.getenv('TESTING') is not None:
             break
+
+    # write jitter data
+    pos_errors_list = []
+
+    for i in block_positions_jitter:
+        mean_pos = np.mean(block_positions_jitter[i]['positions'], axis=0)
+        block_positions_jitter[i]['height'] = np.mean([p[2] for p in block_positions_jitter[i]['positions']])
+        for pos in block_positions_jitter[i]['positions']:
+            displacement = pos - mean_pos
+            error_x = displacement[0]
+            error_y = displacement[1]
+            error_z = displacement[2]
+            pos_errors_list.append({'axis': 'x', 'error': error_x, 'height': block_positions_jitter[i]['height']})
+            pos_errors_list.append({'axis': 'y', 'error': error_y, 'height': block_positions_jitter[i]['height']})
+            pos_errors_list.append({'axis': 'z', 'error': error_z, 'height': block_positions_jitter[i]['height']})
+
+    with open('/home/bch_svt/cartpole/simulation/evaluation/jitter/pos_errors_3im_april2.json', 'w') as f:
+        json.dump(pos_errors_list, f)
+
+    orientation_errors_list = []
+
+    for i in block_orientations_jitter:
+        mean_quat = average_quaternions(block_orientations_jitter[i]['orientations'])
+        block_orientations_jitter[i]['height'] = np.mean([p[2] for p in block_orientations_jitter[i]['orientations']])
+        for orientation in block_orientations_jitter[i]['orientations']:
+            orientation_error = np.degrees(get_angle_between_quaternions_3ax(mean_quat, orientation))
+            error_x = orientation_error[0]
+            error_y = orientation_error[1]
+            error_z = orientation_error[2]
+            pos_errors_list.append({'axis': 'x', 'error': error_x, 'height': block_orientations_jitter[i]['height']})
+            pos_errors_list.append({'axis': 'y', 'error': error_y, 'height': block_orientations_jitter[i]['height']})
+            pos_errors_list.append({'axis': 'z', 'error': error_z, 'height': block_orientations_jitter[i]['height']})
+
+    with open('/home/bch_svt/cartpole/simulation/evaluation/jitter/orientation_errors_3im_april2.json', 'w') as f:
+        json.dump(pos_errors_list, f)
+
+    print(f"Positions: {block_positions_jitter}")
+    print(f"Orientations: {block_orientations_jitter}")
 
     print(f"Max displacements: {max_displacements}")
     print(f"Max displacements mean: {np.mean(max_displacements)}")
