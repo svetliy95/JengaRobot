@@ -37,6 +37,8 @@ import csv
 import random
 import multiprocessing_logging
 import copy
+import json
+import pathlib
 
 profiler = Profiler()
 
@@ -164,13 +166,17 @@ class jenga_env(gym.Env):
     # observation_space = gym.spaces.Box(1)
 
 
-    def __init__(self, render=True, timeout=600, seed=None):
+    def __init__(self, render=True, timeout=600, seed=None, eval_variable=None):
         self.exception_fl = False
         self.toppled_fl = False
         self.timeout_fl = False
         self.screenshot_fl = False
         self.abort_fl = False
         self.placing_fl = False
+
+        self.ts = eval_variable[0]
+        self.idx = eval_variable[1]
+        g_timestep = self.ts
 
         log.debug(f"Process #{os.getpid()} started with seed: {seed}")
 
@@ -195,6 +201,11 @@ class jenga_env(gym.Env):
         self.previous_step_displacement = None
         self.previous_step_z_rot = None
         self.extracted_blocks = 0
+
+        ###################################### sim speed evaluation ########################
+        self.timestep_durations = []
+        self.starting_timestep = 3000*(0.005/g_timestep)
+        self.ending_timestep = self.starting_timestep + 3000
 
 
         # sensor data
@@ -278,6 +289,8 @@ class jenga_env(gym.Env):
 
         # move pusher to the starting position
         self.move_to_random_block()
+
+        Thread(target=self.move_tower).start()
 
         log.debug(f"Env initialization done!")
 
@@ -1142,6 +1155,19 @@ class jenga_env(gym.Env):
     def debug_move_to_zero(self):
         self.extractor.set_position([10, 0, 1])
 
+    def move_tower(self):
+        start_index = 7
+        pos = self.tower.get_position(0)
+        quat = self.tower.get_orientation(0)
+
+        block_id = 0
+        for i in range(1000):
+            l = list(pos) + list(quat)
+            self.sim.data.qpos[start_index + 0 * 7:start_index + (block_id + 1) * 7] = l
+            self.sim.data.qvel[6 + block_id * 6:6 + (block_id + 1) * 6] = [0, 0, 0, 0, 0, 0]
+            pos += np.array([0, 0.001, 0])
+            self.sleep_simtime(0.1)
+
     def debug_collect_localization_errors(self):
         true_positions = self.tower.get_positions()
         true_orientations = self.tower.get_orientations()
@@ -1232,7 +1258,8 @@ class jenga_env(gym.Env):
 
         # simulation loop
         try:
-            while not self.tower_toppled() and not self.simulation_aborted:
+            while not self.tower_toppled() and not self.simulation_aborted and self.t < self.ending_timestep:
+                start_step = time.time()
                 if not self.pause_fl:
                     self.t += 1
 
@@ -1288,11 +1315,19 @@ class jenga_env(gym.Env):
                         break
                 else:
                     time.sleep(0.001)
+                elapsed_step = time.time() - start_step
+                if self.t > self.starting_timestep:
+                    self.timestep_durations.append(elapsed_step)
             log.debug(f"Exit try!")
         except Exception:
             log.exception(f"Exception occured!")
             traceback.print_exc()
             self.exception_fl = True
+
+        with open(f'/home/bch_svt/cartpole/simulation/evaluation/new_sim_speed_data/timesteps_{int(self.ts*1000)}ms_#{self.idx}.json', 'w') as f:
+            json.dump(self.timestep_durations, f)
+        print(f"DONE!")
+
 
         self.simulation_over = True
         # self.debug_write_collected_errors()
@@ -1401,25 +1436,29 @@ class jenga_env_wrapper(gym.Env):
          -1.5037625212933003, -0.6891489343293768, -1.1772412151405776, 0, 0])
     observation_space = gym.spaces.Box(low=high, high=high)
 
-    def __init__(self, normalize, seed=None):
+    def __init__(self, normalize, seed=None, env_var=None):
         log.debug(f"Start initialization")
         self.action_q = Queue()
         self.state_q = Queue()
         self.process_running_q = Queue()
         self.get_state_q = Queue()
+        self.evaluation_q = Queue()
         self.process = None
         self.action_counter = 0
         self.normalize = normalize
         self.seed = seed
         self.sim_pid = None
 
+        self.evaluation_var = env_var
+
         # variable for the last state
         self.last_response = None
         log.debug(f"Finish initialization")
 
-    def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue, normalize, seed):
+    def env_process(self, action_q: Queue, state_q: Queue, process_running_q: Queue, get_state_q: Queue, normalize, seed, evaluation_q: Queue):
         log.debug(f"Start process")
-        env = jenga_env(render=True, seed=seed)
+        eval_variable = evaluation_q.get()
+        env = jenga_env(render=False, seed=seed, eval_variable=eval_variable)
         log.debug(f"Env created")
         flag = True
         debug_collapse_time = random.random()*30 + 3
@@ -1504,7 +1543,7 @@ class jenga_env_wrapper(gym.Env):
         log.debug(f"After processor running wait!")
 
         # reset object variables
-        self.__init__(self.normalize, self.seed)
+        self.__init__(self.normalize, self.seed, self.evaluation_var)
 
         log.debug(f"Before start new process")
         self.start_new_process()
@@ -1548,7 +1587,8 @@ class jenga_env_wrapper(gym.Env):
 
     def start_new_process(self):
         log.debug(f"Start new process #1")
-        self.process = Process(target=self.env_process, args=(self.action_q, self.state_q, self.process_running_q, self.get_state_q, self.normalize, self.seed))
+        self.evaluation_q.put(self.evaluation_var)
+        self.process = Process(target=self.env_process, args=(self.action_q, self.state_q, self.process_running_q, self.get_state_q, self.normalize, self.seed, self.evaluation_q))
         log.debug(f"Start new process #2")
         self.process.start()
         self.sim_pid = self.process.pid
@@ -1560,7 +1600,18 @@ class jenga_env_wrapper(gym.Env):
 
 if __name__ == "__main__":
 
-    pass
+    timeout = 240
+    for ts in range(1, 12):
+        for idx in range(1, 6):
+            start_time = time.time()
+            env = jenga_env_wrapper(True, env_var=(ts*0.001, idx))
+            env.reset()
+            path = f'/home/bch_svt/cartpole/simulation/evaluation/new_sim_speed_data/timesteps_{ts}ms_#{idx}.json'
+            my_file = pathlib.Path(path)
+            while time.time() - start_time < timeout and not my_file.exists():
+                time.sleep(1)
+
+            env.close()
 
     # start_total_time = time.time()
     #

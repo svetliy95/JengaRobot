@@ -100,10 +100,12 @@ def generate_block(number, pos_sigma, angle_sigma, spacing, seed):
     [block_size_x, block_size_y, block_size_z] = [length_distribution.rvs()[0] / 2, width_distribution.rvs()[0] / 2,
                                                   height_distribution.rvs()[0] / 2]
 
+
     # WARNING: debugging code!
-    # if number == 0:
-    #     log.warning("The size of the first block is changed!")
-    #     block_size_z = (block_height_min / 2) * 0.99
+    if number == 0:
+        print("The size of the first block is changed!")
+        block_size_z = (block_height_min / 2) * 0.99
+        mass = block_mass_mean * 100
 
     Tower.block_sizes.append(np.array([block_size_x * 2, block_size_y * 2, block_size_z * 2]))
     s = f'''

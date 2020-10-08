@@ -1227,16 +1227,40 @@ class jenga_env(gym.Env):
         for block_id, lvl, pos in loose_blocks:
             poses = self.tower.get_poses_cv()
             self.move_to_block_id_push(block_id, poses)
+            total_distance = 0
             for i in range(30):
                 force, displacement, poses = self.push()
+                total_distance += displacement
                 print(f"Step #i: Force: {force}, displacement: {displacement}")
                 if force > self.get_force_threshold(lvl):
                     break
                 if i > 10:
-                    self.push_through(20)
+                    self.push_through(30-total_distance)
                     # input('Confirm extraction:')
                     self.extract_and_place_on_top(block_id)
                     break
+
+    def check_block(self):
+        self.go_home()
+
+        loose_blocks = [(37, 8, 2)]
+        # loose_blocks = [(8, 13, 1), (43, 8, 2)]
+        for block_id, lvl, pos in loose_blocks:
+            poses = self.tower.get_poses_cv()
+            self.move_to_block_id_push(block_id, poses)
+            total_distance = 0
+            for i in range(30):
+                force, displacement, poses = self.push()
+                total_distance += displacement
+                print(f"Step #i: Force: {force}, displacement: {displacement}")
+                if force > self.get_force_threshold(lvl):
+                    break
+                if i > 10:
+                    self.push_through(30-total_distance)
+                    # input('Confirm extraction:')
+                    self.extract_and_place_on_top(block_id)
+                    break
+        self.go_home()
 
     def get_force_threshold(self, lvl):
         max = 0.7
