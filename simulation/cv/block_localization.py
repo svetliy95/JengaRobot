@@ -233,10 +233,17 @@ def get_block_positions_mujoco(im1, im2, block_ids, target_tag_size, ref_tag_siz
         return positions, dimage1, dimage2
     else:
         return positions
-
+import time
 def detect_with_apriltag(img, camera_params, detector, cam_mtx, cam_dist):
     img = cv2.undistort(img, cam_mtx, cam_dist)
+    start = time.time()
     detections = detector.detect(img, True, camera_params, tag_size=1)
+    elapsed = time.time() - start
+
+    with open('/home/bch_svt/cartpole/simulation/evaluation/localization_speed/detection_times.txt', 'a') as f:
+        f.write(str(elapsed) + '\n')
+
+
     return detections
 
 def detect_with_aruco(img, cam_mtx, cam_dist):

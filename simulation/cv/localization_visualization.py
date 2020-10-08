@@ -16,6 +16,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib; matplotlib.use("TkAgg")
+import json
 
 def generate_block_xml(id, size, cali: bool):
     length = size['length'] * scaler
@@ -252,19 +253,21 @@ def set_block_poses_debug(cam1, cam2, detector1, detector2, block_sizes, cali_fl
     cam_params2 = cam2.get_params()
     start = time.time()
     im1 = cam1.get_raw_image()
-    elapsed = time.time() - start
-    print(f'Cam1 image time: {elapsed*1000:.2f}ms')
+    elapsed1 = time.time() - start
+    print(f'Cam1 image time: {elapsed1*1000:.2f}ms')
     start = time.time()
     im2 = cam2.get_raw_image()
-    elapsed = time.time() - start
-    print(f'Cam2 image time: {elapsed * 1000:.2f}ms')
+    elapsed2 = time.time() - start
+    print(f'Cam2 image time: {elapsed2 * 1000:.2f}ms')
     blank_image = np.zeros((im2.shape[0], im2.shape[1]), np.uint8)
     block_ids = [i for i in range(54)]
     start = time.time()
     poses1 = get_block_positions(im1, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos, block_sizes, corrections,
                         cam_params1, cam_params2, False, detector1, detector2, cam1_mtx, cam1_dist, cam2_mtx, cam2_dist)
-    elapsed = time.time() - start
-    print(f'Detection time: {elapsed * 1000:.2f}ms')
+    elapsed3 = time.time() - start
+    print(f'Detection time: {elapsed3 * 1000:.2f}ms')
+
+    localization_times.append([elapsed1, elapsed2, elapsed3])
 
     # poses2 = get_block_positions(blank_image, im2, block_ids, target_tag_size, ref_tag_size, ref_tag_id, ref_tag_pos,
     #                             block_sizes, corrections,
@@ -440,6 +443,9 @@ if __name__ == '__main__':
     block_pos = np.array([0, 0, 100])
     block_quat = Quaternion([1, 0, 0, 0])
 
+    ##################################3 evaluation code #####################################3
+    localization_times = []
+
     # initialize camera and detector
     # cam = Camera(cam1_serial, cam1_mtx_11cm, cam1_dist_11cm)
     cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
@@ -492,7 +498,7 @@ if __name__ == '__main__':
     estimated_shield_pos = np.array([0, 0, 0])
 
     # simulate
-    while t < 100000:
+    while len(localization_times) < 200:
         t += 1
 
         if t % 100 == 0:
@@ -517,6 +523,10 @@ if __name__ == '__main__':
 
     print(f"Max displacements: {max_displacements}")
     print(f"Max displacements mean: {np.mean(max_displacements)}")
+
+
+    with open('/home/bch_svt/cartpole/simulation/evaluation/localization_speed/localization_speed1.json', 'w') as f:
+        json.dump(localization_times, f)
 
     exit()
 
