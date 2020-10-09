@@ -55,9 +55,10 @@ class Tower:
     pos_sigma = (position_error / n_sigma) / math.sqrt(3)
     orientation_sigma = 2/3
 
-    def __init__(self, sim=None, viewer=None, simulation_fl=True, cam1=None, cam2=None, at_detector1=None, at_detector2=None, block_sizes=None, corrections=None):
+    def __init__(self, sim=None, viewer=None, simulation_fl=True, cam1=None, cam2=None, at_detector1=None, at_detector2=None, block_sizes=None, corrections=None, block_num=54):
 
         if simulation_fl:
+            self.block_num = block_num
             log.debug(f"Init #1")
             self.sim = sim
             self.viewer = viewer
@@ -72,6 +73,7 @@ class Tower:
             self.toppled_fl = False
             self.initial_pos = self.get_center_xy(positions)
             log.debug(f"Init #2")
+            print(f"Self.block_num: {self.block_num}")
         else:
 
             # debigging
@@ -343,14 +345,14 @@ class Tower:
 
     def get_positions(self):
         positions = {}
-        for i in range(g_blocks_num):
+        for i in range(self.block_num):
             positions[i] = self.get_position(i)
 
         return positions
 
     def get_orientations(self):
         orientations = {}
-        for i in range(g_blocks_num):
+        for i in range(self.block_num):
             orientations[i] = self.get_orientation(i)
 
         return orientations

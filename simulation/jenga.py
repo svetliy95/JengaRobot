@@ -177,6 +177,8 @@ class jenga_env(gym.Env):
         self.ts = eval_variable[0]
         self.idx = eval_variable[1]
         g_timestep = self.ts
+        g_blocks_num = eval_variable[2]
+        self.block_num = eval_variable[2]
 
         log.debug(f"Process #{os.getpid()} started with seed: {seed}")
 
@@ -192,7 +194,7 @@ class jenga_env(gym.Env):
         self.tower_toppled_fl = False
         self.simulation_aborted = False
         self.simulation_over = False
-        self.plot_env_state = True
+        self.plot_env_state = False
 
         # globals
         self.last_screenshot = None
@@ -1161,7 +1163,7 @@ class jenga_env(gym.Env):
         quat = self.tower.get_orientation(0)
 
         block_id = 0
-        for i in range(1000):
+        for i in range(1000000):
             l = list(pos) + list(quat)
             self.sim.data.qpos[start_index + 0 * 7:start_index + (block_id + 1) * 7] = l
             self.sim.data.qvel[6 + block_id * 6:6 + (block_id + 1) * 6] = [0, 0, 0, 0, 0, 0]
@@ -1233,9 +1235,9 @@ class jenga_env(gym.Env):
 
         # initialize internal objects
         if self.render:
-            self.tower = Tower(self.sim, self.viewer)
+            self.tower = Tower(self.sim, self.viewer, block_num=self.block_num)
         else:
-            self.tower = Tower(self.sim, None)
+            self.tower = Tower(self.sim, None, block_num=self.block_num)
         self.pusher = Pusher(self.sim, self.tower, self)
         self.extractor = Extractor(self.sim, self.tower, self)
 
@@ -1324,7 +1326,8 @@ class jenga_env(gym.Env):
             traceback.print_exc()
             self.exception_fl = True
 
-        with open(f'/home/bch_svt/cartpole/simulation/evaluation/new_sim_speed_data/timesteps_{int(self.ts*1000)}ms_#{self.idx}.json', 'w') as f:
+        # with open(f'/home/bch_svt/cartpole/simulation/evaluation/new_sim_speed_data/timesteps_{int(self.ts*1000)}ms_#{self.idx}.json', 'w') as f:
+        with open(f'/home/bch_svt/cartpole/simulation/evaluation/sim_speed_blocks/timesteps_{self.block_num}blocks_#{self.idx}.json', 'w') as f:
             json.dump(self.timestep_durations, f)
         print(f"DONE!")
 
@@ -1600,13 +1603,26 @@ class jenga_env_wrapper(gym.Env):
 
 if __name__ == "__main__":
 
-    timeout = 240
-    for ts in range(1, 12):
-        for idx in range(1, 6):
+    global g_blocks_num
+    timeout = 360
+    # for ts in range(10, 12):
+    #     for idx in range(1, 11):
+    #         start_time = time.time()
+    #         env = jenga_env_wrapper(True, env_var=(ts*0.001, idx, 54))
+    #         env.reset()
+    #         path = f'/home/bch_svt/cartpole/simulation/evaluation/new_sim_speed_data/timesteps_{ts}ms_#{idx}.json'
+    #         my_file = pathlib.Path(path)
+    #         while time.time() - start_time < timeout and not my_file.exists():
+    #             time.sleep(1)
+    #
+    #         env.close()
+
+    for blocks in range(6, 0, -6):
+        for idx in range(1, 11):
             start_time = time.time()
-            env = jenga_env_wrapper(True, env_var=(ts*0.001, idx))
+            env = jenga_env_wrapper(True, env_var=(0.005, idx, blocks))
             env.reset()
-            path = f'/home/bch_svt/cartpole/simulation/evaluation/new_sim_speed_data/timesteps_{ts}ms_#{idx}.json'
+            path = f'/home/bch_svt/cartpole/simulation/evaluation/sim_speed_blocks/timesteps_{blocks}blocks_#{idx}.json'
             my_file = pathlib.Path(path)
             while time.time() - start_time < timeout and not my_file.exists():
                 time.sleep(1)
