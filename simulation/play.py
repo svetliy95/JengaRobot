@@ -107,7 +107,7 @@ class jenga_env(gym.Env):
         self.reference_force = 0
 
         # global parameters
-        self.gap = 0  # in mm
+        self.gap = 2  # in mm
         self.grip_depth_narrow = 25
         self.pull_distance = block_length_max - self.grip_depth_narrow + 10
         self.placing_vert_gap = 3  # in mm
@@ -1220,6 +1220,7 @@ class jenga_env(gym.Env):
                     self.extract_and_place_on_top(block_id)
                     break
 
+
     def check_extractable_blocks(self):
         self.go_home()
 
@@ -1234,6 +1235,27 @@ class jenga_env(gym.Env):
                     break
                 if i > 10:
                     self.push_through(20)
+                    # input('Confirm extraction:')
+                    self.extract_and_place_on_top(block_id)
+                    break
+
+
+    def check_certain_blocks(self):
+        self.go_home()
+
+        loose_blocks = [(27, 13, 1), (11 , 8, 2)]
+        for block_id, lvl, pos in loose_blocks:
+            poses = self.tower.get_poses_cv()
+            self.move_to_block_id_push(block_id, poses)
+            total_distance = 0
+            for i in range(30):
+                force, displacement, poses = self.push()
+                total_distance += displacement
+                print(f"Step #i: Force: {force}, displacement: {displacement}")
+                if force > self.get_force_threshold(lvl):
+                    break
+                if i > 10:
+                    self.push_through(30 - total_distance)
                     # input('Confirm extraction:')
                     self.extract_and_place_on_top(block_id)
                     break
@@ -1617,7 +1639,8 @@ if __name__ == "__main__":
     jenga = jenga_env(True)
 
 
-    jenga.check_extractable_blocks()
+    # jenga.check_extractable_blocks()
+    jenga.check_certain_blocks()
 
     exit()
 
