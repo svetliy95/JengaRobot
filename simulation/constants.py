@@ -197,6 +197,7 @@ left_gripper_ip = '192.168.10.1'
 real_tag_pos = np.array([0, 0, 0])
 right_robot_home_position_world = np.array([158.613, -156.59, 95.871, 0.0, 0.0, 135])
 right_robot_home_position_world = np.array([78.632, -19.887, 320, 0, 0, -45])
+right_robot_home_position_world = np.array([146, -125, 320, 0, 0, -45])
 zwischenablage_place_pose = np.array([298.443, 88.613, 76.435, 34.864, -29.77 , -12.606])
 zwischenablage_place_pos = np.array([298.443, 88.613, 76.435])
 zwischenablage_place_quat = Quaternion(0.9249325768880927, 0.2608642425642888, -0.2753860975559344, -0.024740097724662957)

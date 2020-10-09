@@ -131,6 +131,8 @@ class Robot:
         # receive pos as a string
         pos_str = self.recv()
 
+        print(f"Recieved message: {pos_str}")
+
         # remove brackets
         pos_str = pos_str[1:-1]
 
@@ -420,8 +422,11 @@ if __name__ == "__main__":
     # r2.connect()
 
     pos = r1.get_world_position()
+    print(f"World position: {pos}")
     quat = r1.get_world_orientation()
     pos = pos - quat.rotate(x_unit_vector)
+
+    exit()
 
     r1.set_world_pos(pos)
     r1.plot_forces('x')
