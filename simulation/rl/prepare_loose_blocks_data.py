@@ -13,6 +13,7 @@ import datetime
 from constants import *
 from utils.utils import Line
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import precision_score, recall_score
 
 def to_categorical(y):
     vector_dim = len(np.unique(y))
@@ -28,7 +29,6 @@ def to_categorical(y):
     new_y = np.reshape(new_y, (len(new_y), vector_dim))
 
     return new_y
-
 
 def calculate_block_height_params():
     # prepare dataset
@@ -238,6 +238,9 @@ def get_category_heuristic(x, mean, std):
     loose_blocks = []
 
     [height0, height1, height2] = x[:3] * std[:3] + mean[:3]
+    # [height0, height1, height2] = x[:3]
+
+    print(f"heights: {[height0, height1, height2]}")
 
     block_pos = None
 
@@ -280,26 +283,7 @@ def get_category_heuristic(x, mean, std):
 
     return 0
 
-class EarlyStoppingAtMinLoss(keras.callbacks.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        loss = logs.get("loss")
-        val_loss = logs.get("val_loss")
-        acc = logs.get("acc")
-        val_acc = logs.get("val_acc")
-        if acc == 1. and val_acc == 1:
-            self.model.stop_training = True
-
-if __name__ == "__main__":
-    # dataset ready!
-
-    x, y = read_data()
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.90)
-    x, y = augment_data(x_train, y_train)
-    x, y = add_one_hot(x, y)
-    x, y, mean, std = prepare_data(x, y)
-
-    print(f"Data length: {len(x)}")
-
+def define_model():
     num_classes = 4
     input_shape = 6
 
@@ -314,58 +298,104 @@ if __name__ == "__main__":
 
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    # es = EarlyStopping(monitor='loss', mode='auto', patience=10,verbose=1)
-    es = EarlyStoppingAtMinLoss()
-
-    # tensorboard callback
-    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-
-    # model.fit(x=x, y=y, nb_epoch=5, verbose=1, validation_split=0.2, shuffle=True, callbacks=[es])
-    #
-    # model.save_weights('loose_blocks_model_093')
-
-    model.load_weights('loose_blocks_model_093')
+    return model
 
 
-    x, y = add_one_hot(x_test, y_test)
-    x, y, _, _ = prepare_data(x, y, mean, std)
+class EarlyStoppingAtMinLoss(keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        loss = logs.get("loss")
+        val_loss = logs.get("val_loss")
+        acc = logs.get("acc")
+        val_acc = logs.get("val_acc")
+        if acc == 1. and val_acc == 1:
+            self.model.stop_training = True
 
-    results = model.evaluate(x=x, y=y)
-    print(f"test loss, test acc: {results}")
-    loose_but_not_tested = 0
-    stuck_but_tested = 0
-    predictions = []
-    for i in range(len(x)):
-    # for i in range(10):
-        print(f"x: {x[i] * std + mean}")
-        prediction = model.predict(np.reshape(x[i], (1,6)))
-        # prediction = get_category_heuristic(x[i], mean, std)
+if __name__ == "__main__":
+    # dataset ready!
+    pass
+for epochs in range(2, 6):
+    with open('loose_blocks_precision_recall.csv', 'a+') as f:
+        f.write(f"{epochs} Epochs:\n")
+    for i in range(50):
+        x, y = read_data()
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
+        x, y = augment_data(x_train, y_train)
+        x, y = add_one_hot(x, y)
+        x, y, mean, std = prepare_data(x, y)
 
-        truth_pos = y[i]
-        prediction_pos = 1 if prediction > 0.2 else 0
-        predictions.append(prediction_pos)
-        if truth_pos == 1 and prediction_pos == 0:
-            loose_but_not_tested += 1
-        if truth_pos == 0 and prediction_pos == 1:
-            stuck_but_tested += 1
-        print(f"Prediction: {prediction}")
-        print(f"Truth: {y[i]}")
+        model = define_model()
 
-    predictions_counter = Counter(predictions)
-    predicted_loose = predictions_counter[1]
-    predicted_stuck = predictions_counter[0]
+        # es = EarlyStopping(monitor='loss', mode='auto', patience=10,verbose=1)
+        es = EarlyStoppingAtMinLoss()
 
-    truth_counter = Counter(y)
-    truth_loose = truth_counter[1]
-    truth_stuck = truth_counter[0]
+        # tensorboard callback
+        log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_callback = keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-    print(f"Loose but not tested: {loose_but_not_tested}")
-    print(f"Stuck but tested: {stuck_but_tested}")
-    print(f"Founded blocks ratio = {1 - loose_but_not_tested / truth_loose}")
-    print(f"Stuck but tested ratio = {stuck_but_tested / predicted_loose}")
-    print(f"Blocks not tested ratio = {predicted_stuck/truth_stuck}")
+        model.fit(x=x, y=y, nb_epoch=2, verbose=1, validation_split=0.2, shuffle=True, callbacks=[es])
+
+        # model.save_weights('loose_blocks_model_12_10_2020(3)')
+        #
+        # model.load_weights('loose_blocks_model_093')
+        # model.load_weights('loose_blocks_model_12_10_2020')
 
 
 
+        # test heuristic
+        # x_test, y_test = read_data()
+        x, y = add_one_hot(x_test, y_test)
+        mean = block_selection_mean
+        std = block_selection_std
 
+        # mean = np.array([0, 0, 0, 0, 0, 0])
+        # std = np.array([1, 1, 1, 1, 1, 1])
+
+        x, y, _, _ = prepare_data(x, y, mean, std)
+
+        print(f"X: {x}")
+        print(f"Y: {y}")
+
+        print(f"Mean: {mean}")
+        print(f"Std: {std}")
+
+        results = model.evaluate(x=x, y=y)
+        print(f"test loss, test acc: {results}")
+        loose_but_not_tested = 0
+        stuck_but_tested = 0
+        predictions = []
+        for i in range(len(x)):
+            # for i in range(10):
+            print(f"x: {x[i] * std + mean}")
+            print(f"x: {x[i]}")
+            prediction = model.predict(np.reshape(x[i], (1,6)))
+            # prediction = get_category_heuristic(x[i], mean, std)
+
+            truth_pos = y[i]
+            prediction_pos = 1 if prediction > 0.2 else 0
+            predictions.append(prediction_pos)
+            if truth_pos == 1 and prediction_pos == 0:
+                loose_but_not_tested += 1
+            if truth_pos == 0 and prediction_pos == 1:
+                stuck_but_tested += 1
+            print(f"Prediction: {prediction}")
+            print(f"Truth: {y[i]}")
+
+        predictions_counter = Counter(predictions)
+        predicted_loose = predictions_counter[1]
+        predicted_stuck = predictions_counter[0]
+
+        truth_counter = Counter(y)
+        truth_loose = truth_counter[1]
+        truth_stuck = truth_counter[0]
+
+        print(f"Loose but not tested: {loose_but_not_tested}")
+        print(f"Stuck but tested: {stuck_but_tested}")
+        print(f"Founded blocks ratio = {1 - loose_but_not_tested / truth_loose}")
+        print(f"Stuck but tested ratio = {stuck_but_tested / predicted_loose}")
+        print(f"Blocks not tested ratio = {predicted_stuck/truth_stuck}")
+        print(f"Precision: {precision_score(y, predictions)}")
+        print(f"Recall: {recall_score(y, predictions)}")
+        precision = precision_score(y, predictions)
+        recall = recall_score(y, predictions)
+        with open('loose_blocks_precision_recall.csv', 'a+') as f:
+            f.write(f"{precision}, {recall}\n")

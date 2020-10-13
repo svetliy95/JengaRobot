@@ -1,2 +1,2 @@
-model_checkpoint_path: "loose_blocks_model"
-all_model_checkpoint_paths: "loose_blocks_model"
+model_checkpoint_path: "loose_blocks_model_12_10_2020(2)"
+all_model_checkpoint_paths: "loose_blocks_model_12_10_2020(2)"
