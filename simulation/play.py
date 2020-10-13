@@ -20,6 +20,8 @@ from utils.utils import calculate_rotation, euler2quat
 from utils.utils import Line
 from multiprocessing import Process, Queue
 import traceback
+from tensorflow import keras
+from tensorflow.keras.layers import Dense, BatchNormalization
 
 log = logging.Logger(__name__)
 formatter = colorlog.ColoredFormatter('%(log_color)s%(levelname)sPID:%(process)d:%(funcName)s:%(message)s')
@@ -96,7 +98,8 @@ class jenga_env(gym.Env):
         self.individual_pushing_distance = 10
         self.last_force = 0  # needed for calculating block displacement using force
         # self.positions_to_check = {i: {j for j in range(3)} for i in range(4, g_blocks_num - 9 + 3)}
-        self.positions_to_check = {i: {j for j in range(3)} for i in range(4, g_blocks_num - 9 + 3)}
+        self.positions_to_check = {i: {j for j in range(3)} for i in range(3, g_blocks_num - 9 + 3)}
+        # self.positions_to_check = self.get_blocks_to_check_ml()
         # self.checked_positions = {3: {0, 1, 2}, 7: {0, 1, 2}, 12: {0, 1, 2}, 11: {0, 1, 2}, }
         # self.checked_positions = {4: {0, 1, 2}, 5: {0, 1, 2}, 6: {1, 2}, 7: {1, 2}, 8: {0, 1, 2}, 9: {1}, 10: {0, 1, 2}, 11: {1}, 12: {1}, 13: {0, 2}, 14: {1}, 15: {0, 1, 2}, 16: {1}, 17: {0, 2}}
         # self.positions_to_check = self.create_random_blocks_to_check(30)
@@ -356,7 +359,7 @@ class jenga_env(gym.Env):
         if x < 0 and abs(y) < abs(x):
             return 2
 
-    def move_along_own_axis(self, axis, distance):  # distance can be negative
+    def move_along_own_axis(self, axis, distance, speed=0):  # distance can be negative
         assert axis == 'x' or axis == 'y' or axis == 'z', "Wrong axis!"
 
         if axis == 'x':
@@ -371,7 +374,7 @@ class jenga_env(gym.Env):
 
         translation_direction = np.array(gripper_quat.rotate(unit_vector))
         end_point = np.array([gripper_pos[0], gripper_pos[1], gripper_pos[2]]) + translation_direction * distance
-        self.robot.set_world_pos(end_point)
+        self.robot.set_world_pos(end_point, speed=speed)
 
     def move_to_block_push(self, lvl, pos, poses):
         # get positions and orientations
@@ -385,6 +388,106 @@ class jenga_env(gym.Env):
             log.warning(f"There is no block on position ({lvl}, {pos}).")
 
         return block_id
+
+    def get_blocks_to_check_ml(self):
+        blocks_to_check = {i: set() for i in range(3, g_blocks_num - 9 + 3)}
+
+        input_shape = 6
+
+        model = keras.Sequential()
+        model.add(Dense(64, input_dim=input_shape, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Dense(128, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Dense(32, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Dense(1, activation='sigmoid'))
+
+        model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+        model.load_weights('/home/bch_svt/cartpole/simulation/rl/loose_blocks_model_12_10_2020')
+
+        block_sizes = read_block_sizes('/home/bch_svt/cartpole/simulation/cv/block_sizes.json')
+
+        poses = self.tower.get_poses_cv()
+        positions = self.tower.get_positions_from_poses(poses)
+        orientations = self.tower.get_orientations_from_poses(poses)
+        layers = self.tower.get_layers_state(positions, orientations, origin)
+
+        print(f"Layers: {layers}")
+
+
+        for lvl in layers:
+            if lvl > 2:
+                inverted = False
+                # heights = [block_sizes[block_id]['height'] for block_id in layer]
+                heights = []
+                layer = [layers[lvl][i] for i in range(3)]
+                for i in range(len(layer)):
+                    heights.append(block_sizes[layer[i]]['height'])
+                if heights[0] > heights[2]:
+                    heights[0], heights[2] = heights[2], heights[0]
+                    inverted = True
+                heights = np.reshape(heights, (1, 3))
+                for pos, block_id in enumerate(layer):
+                    zero_vec = np.zeros((1, 3))
+                    zero_vec[0][pos] = 1
+                    one_hot = zero_vec
+
+                    heights_normalized = (heights - block_selection_mean[:3]) / block_selection_std[:3]
+
+                    feature_vec = np.concatenate((heights_normalized, one_hot), axis=1)
+
+                    prediction = model.predict(x=feature_vec)
+
+                    if prediction > 0.2:
+                        prediction = True
+                    else:
+                        prediction = False
+
+                    if prediction:
+                        if inverted:
+                            if pos == 2:
+                                blocks_to_check[lvl].update({0})
+                            elif pos == 0:
+                                blocks_to_check[lvl].update({2})
+                            else:
+                                blocks_to_check[lvl].update({pos})
+                        else:
+                            blocks_to_check[lvl].update({pos})
+
+                    # print(f"Feature vector: {feature_vec}")
+                    # print(f"Predictions: {prediction}")
+
+
+        #
+        #
+        # layer = [10, 9, 5]
+        # heights = [block_sizes[i]['height'] for i in layer]
+        # heights = [14.63,       14.94,       15.03]
+        # heights = [block_sizes[13]['height'], block_sizes[17]['height'], block_sizes[6]['height']]
+        # heights = np.array(heights)
+        # heights = (heights - block_selection_mean[:3]) / block_selection_std[:3]
+        # heights = np.reshape(heights, (1, 3))
+        # zero_vec = np.zeros((1, 3))
+        # zero_vec[0][1] = 1
+        # feature_vec = np.concatenate((heights, zero_vec), axis=1)
+        #
+        # print(f"Feature vector: {feature_vec}")
+        #
+        # np.reshape(feature_vec, (1, 6))
+        #
+        # print(f"Predict: {model.predict(feature_vec)}")
+        #
+        # exit()
+        remove = [k for k in blocks_to_check if blocks_to_check[k] == {} or blocks_to_check[k] == set()]
+        for lvl in remove:
+            del blocks_to_check[lvl]
+
+        print(f"Blocks to check: {blocks_to_check}")
+
+        return blocks_to_check
+
 
     def move_to_random_block(self):
         # get block poses
@@ -550,7 +653,7 @@ class jenga_env(gym.Env):
             target = np.array([target_x, target_y, target_z]) + np.array(block_x_face_normal_vector) * block_length_mean * 0.5
 
             # move pusher backwards to avoid collisions
-            self.move_away_from_tower()
+            self.move_away_from_tower(speed=10)
 
             # compute robot gripper orientation
             gripper_quat = offset_direction_quat
@@ -577,11 +680,11 @@ class jenga_env(gym.Env):
             # move upwards
             current_pos = self.robot.get_world_position()
             intermediate_pos = self.set_pos_height(current_pos, stopover_height)
-            self.robot.set_world_pos(intermediate_pos)
+            self.robot.set_world_pos(intermediate_pos, speed=10)
 
             # move over the intermediate target
             intermediate_pos = self.set_pos_height(target, stopover_height)
-            self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_quat, pos_flags='(7, 0)')
+            self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_quat, pos_flags='(7, 0)', speed=10)
 
 
 
@@ -647,7 +750,7 @@ class jenga_env(gym.Env):
                 block_x_face_normal_vector) * block_length_mean * 0.5
 
             # move pusher backwards to avoid collisions
-            self.move_away_from_tower()
+            self.move_away_from_tower(speed=10)
 
             # switch to the finger tip tool
             self.robot.switch_tool_two_fingers()
@@ -667,11 +770,11 @@ class jenga_env(gym.Env):
                 # move upwards
                 current_pos = self.robot.get_world_position()
                 intermediate_pos = self.set_pos_height(current_pos, stopover_height)
-                self.robot.set_world_pos(intermediate_pos)
+                self.robot.set_world_pos(intermediate_pos, speed=10)
 
                 # move over the intermediate target
                 intermediate_pos = self.set_pos_height(target, stopover_height)
-                self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_quat, pos_flags='(7, 0)')
+                self.robot.set_world_pos_orientation_mov(intermediate_pos, gripper_quat, pos_flags='(7, 0)', speed=10)
 
             # move to intermediate target
             self.robot.set_world_pos_orientation_mov(target, gripper_quat, pos_flags='(7, 0)')
@@ -721,7 +824,7 @@ class jenga_env(gym.Env):
     def wait_force_stabilizing(self):
         time.sleep(read_force_wait)
 
-    def move_away_from_tower(self):
+    def move_away_from_tower(self, speed=0):
         self.robot.switch_tool_sprung_finger_tip_right()
         distance1 = max(0, block_length_max - np.linalg.norm(
             self.tower.initial_pos[:2] - self.robot.get_world_position()[:2]))
@@ -732,7 +835,7 @@ class jenga_env(gym.Env):
         distance3 = max(0, block_length_max - np.linalg.norm(
             self.tower.initial_pos[:2] - self.robot.get_world_position()[:2]))
         distance = max(distance1, distance2, distance3)
-        self.move_along_own_axis('x', distance)
+        self.move_along_own_axis('x', distance, speed=speed)
 
     def orientation_towards_tower_center(self, point, tower_center):
         point = np.copy(point)
@@ -1225,18 +1328,21 @@ class jenga_env(gym.Env):
         self.go_home()
 
         loose_blocks = self.find_extractable_blocks()
+        print(f"Loose blocks: {loose_blocks}")
         for block_id, lvl, pos in loose_blocks:
             poses = self.tower.get_poses_cv()
             self.move_to_block_id_push(block_id, poses)
+            total_distance = 0
             for i in range(30):
                 force, displacement, poses = self.push()
+                total_distance += displacement
                 print(f"Step #i: Force: {force}, displacement: {displacement}")
                 if force > self.get_force_threshold(lvl):
                     break
                 if i > 10:
-                    self.push_through(20)
-                    # input('Confirm extraction:')
-                    self.extract_and_place_on_top(block_id)
+                    self.push_through(30 - total_distance)
+                    input('Confirm extraction:')
+                    # self.extract_and_place_on_top(block_id)
                     break
 
 
@@ -1244,6 +1350,7 @@ class jenga_env(gym.Env):
         self.go_home()
 
         loose_blocks = [(27, 13, 1), (11 , 8, 2)]
+
         for block_id, lvl, pos in loose_blocks:
             poses = self.tower.get_poses_cv()
             self.move_to_block_id_push(block_id, poses)
@@ -1257,6 +1364,7 @@ class jenga_env(gym.Env):
                 if i > 10:
                     self.push_through(30 - total_distance)
                     # input('Confirm extraction:')
+
                     self.extract_and_place_on_top(block_id)
                     break
 
@@ -1427,7 +1535,7 @@ class jenga_env(gym.Env):
                 self.push_through(self.max_pushing_distance - self.individual_pushing_distance)
 
                 log.debug(f"Before pull_and_place")
-                self.extract_and_place_on_top(self.current_block_id)
+                # self.extract_and_place_on_top(self.current_block_id)
                 self.go_home()
                 input(f"Confirm extracting: ")
                 log.debug(f"After pull_and_place")
@@ -1557,7 +1665,7 @@ class jenga_env(gym.Env):
         self.initialize_global_variables()
 
         # move to some block
-        self.move_to_random_block()
+        # self.move_to_random_block()
 
         poses = self.tower.get_poses_cv()
         positions = self.tower.get_positions_from_poses(poses)
@@ -1638,9 +1746,17 @@ class jenga_env(gym.Env):
 if __name__ == "__main__":
     jenga = jenga_env(True)
 
+    # poses = jenga.tower.get_poses_cv()
+    # positions = jenga.tower.get_positions_from_poses(poses)
+    # layers = jenga.tower.get_layers(positions)
+
+    # jenga.get_blocks_to_check_ml()
+    #
+    # exit()
 
     # jenga.check_extractable_blocks()
     jenga.check_certain_blocks()
+    # jenga.extract_certain_blocks()
 
     exit()
 

@@ -242,7 +242,7 @@ class Tower:
 
         poses_list = []
 
-        for i in range(1):
+        for i in range(2):
             im1 = self.cam1.get_raw_image()
             im2 = self.cam2.get_raw_image()
             cv2.imwrite(f'./debug_images/image_{self.image_index}.jpg', im1)
