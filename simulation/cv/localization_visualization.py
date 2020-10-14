@@ -525,8 +525,8 @@ if __name__ == '__main__':
     print(f"Max displacements mean: {np.mean(max_displacements)}")
 
 
-    with open('/home/bch_svt/cartpole/simulation/evaluation/localization_speed/localization_speed1.json', 'w') as f:
-        json.dump(localization_times, f)
+    # with open('/home/bch_svt/cartpole/simulation/evaluation/localization_speed/localization_speed1.json', 'w') as f:
+    #     json.dump(localization_times, f)
 
     exit()
 
