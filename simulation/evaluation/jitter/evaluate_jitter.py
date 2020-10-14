@@ -244,7 +244,7 @@ def evaluate():
     # ax.set(xlabel='Achse', ylabel='Fehler in mm')
     # plt.show()
 
-    fig_dims = (7, 2)
+    fig_dims = (5.8, 3.2)
     fig, ax = plt.subplots(figsize=fig_dims)
 
     ax = sns.boxplot(ax=ax, x='error', y='axis', hue='Detektor', data=df, orient='h', showfliers=False)
@@ -252,7 +252,7 @@ def evaluate():
     ax.set(ylabel='Achse', xlabel='Fehler in mm')
     ax.set(xlim=(-0.01, 1.5))
     plt.tight_layout()
-    plt.savefig('/home/bch_svt/masterarbeit/figures/jitter/detection_libraries_jitter_comparison.pdf', format='pdf')
+    # plt.savefig('/home/bch_svt/masterarbeit/figures/jitter/detection_libraries_jitter_comparison.pdf', format='pdf')
     plt.show()
 
     exit()
