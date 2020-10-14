@@ -4,6 +4,7 @@ from stable_baselines.common.policies import register_policy, MlpPolicy, FeedFor
 from stable_baselines import PPO2
 from stable_baselines.gail import ExpertDataset
 from play import jenga_env
+import time
 
 
 env = jenga_env(normalize=True)
@@ -25,7 +26,10 @@ while not done:
     print(f"Before predict!")
     action, _ = model.predict(obs)
     print(f"After predict!")
+    start = time.time()
     obs, reward, done, info = env.step(action)
+    elapsed = time.time() - start
+    print(f'Elapsed time step: {elapsed*1000:.2f}ms')
     print(f"Done: {done}")
     print(f"Info: {info}")
     print(f"After step!")

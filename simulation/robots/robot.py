@@ -423,7 +423,7 @@ if __name__ == "__main__":
     quat = r1.get_world_orientation()
     pos = pos - quat.rotate(x_unit_vector)
 
-    r1.set_world_pos(pos)
+    # r1.set_world_pos(pos)
     r1.plot_forces('x')
 
     r1.switch_tool_two_fingers()

@@ -98,8 +98,8 @@ class jenga_env(gym.Env):
         self.individual_pushing_distance = 10
         self.last_force = 0  # needed for calculating block displacement using force
         # self.positions_to_check = {i: {j for j in range(3)} for i in range(4, g_blocks_num - 9 + 3)}
-        self.positions_to_check = {i: {j for j in range(3)} for i in range(3, g_blocks_num - 9 + 3)}
-        # self.positions_to_check = self.get_blocks_to_check_ml()
+        # self.positions_to_check = {i: {j for j in range(3)} for i in range(3, g_blocks_num - 9 + 3)}
+        self.positions_to_check = self.get_blocks_to_check_ml()
         # self.checked_positions = {3: {0, 1, 2}, 7: {0, 1, 2}, 12: {0, 1, 2}, 11: {0, 1, 2}, }
         # self.checked_positions = {4: {0, 1, 2}, 5: {0, 1, 2}, 6: {1, 2}, 7: {1, 2}, 8: {0, 1, 2}, 9: {1}, 10: {0, 1, 2}, 11: {1}, 12: {1}, 13: {0, 2}, 14: {1}, 15: {0, 1, 2}, 16: {1}, 17: {0, 2}}
         # self.positions_to_check = self.create_random_blocks_to_check(30)
@@ -1349,14 +1349,23 @@ class jenga_env(gym.Env):
     def check_certain_blocks(self):
         self.go_home()
 
-        loose_blocks = [(27, 13, 1), (11 , 8, 2)]
+        loose_blocks = [(31, 3, 0)]
 
         for block_id, lvl, pos in loose_blocks:
             poses = self.tower.get_poses_cv()
+            start = time.time()
             self.move_to_block_id_push(block_id, poses)
+            elapsed = time.time() - start
+            print(f'Elapsed time to block: {elapsed*1000:.2f}ms')
+
+            exit()
             total_distance = 0
+            start_total = time.time()
             for i in range(30):
+                start = time.time()
                 force, displacement, poses = self.push()
+                elapsed = time.time() - start
+                print(f'Elapsed time for push: {elapsed*1000:.2f}ms')
                 total_distance += displacement
                 print(f"Step #i: Force: {force}, displacement: {displacement}")
                 if force > self.get_force_threshold(lvl):
@@ -1365,8 +1374,10 @@ class jenga_env(gym.Env):
                     self.push_through(30 - total_distance)
                     # input('Confirm extraction:')
 
-                    self.extract_and_place_on_top(block_id)
+                    # self.extract_and_place_on_top(block_id)
                     break
+            elapsed_total = time.time() - start_total
+            print(f"Total elapsed time: {elapsed_total:.2f}")
 
     def get_force_threshold(self, lvl):
         max = 0.7
@@ -1746,7 +1757,7 @@ class jenga_env(gym.Env):
 if __name__ == "__main__":
     jenga = jenga_env(True)
 
-    # poses = jenga.tower.get_poses_cv()
+    poses = jenga.tower.get_poses_cv()
     # positions = jenga.tower.get_positions_from_poses(poses)
     # layers = jenga.tower.get_layers(positions)
 
@@ -1755,7 +1766,31 @@ if __name__ == "__main__":
     # exit()
 
     # jenga.check_extractable_blocks()
-    jenga.check_certain_blocks()
+
+    # jenga.check_certain_blocks()
+
+    jenga.move_to_block_id_extract(11)
+
+    start = time.time()
+    jenga.robot.grip()
+
+
+    jenga.pull()
+
+    # put on zwischenablage
+    jenga.place_on_zwischenablage()
+
+    # take from zwischenablage
+    jenga.take_from_zwischenablage()
+
+    # place on top
+    jenga.place_on_top(11)
+    elapsed = time.time() - start
+    print(f'Place on top: {elapsed * 1000:.2f}ms')
+
+    # go home
+    jenga.go_home()
+    # jenga.move_to_
     # jenga.extract_certain_blocks()
 
     exit()
