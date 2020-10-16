@@ -59,15 +59,15 @@ def move_along_own_axis(axis, distance, speed=0):  # distance can be negative
 
 
 if __name__ == "__main__":
-    # # initialize coordinate system
-    # x_ax = np.array([404.36, -91.24, 0.36])
-    # y_ax = np.array([331.34, 307.78, 1.09])
-    # origin = np.array([565.7, 65.05, 0.56])
-    # coord_system = CoordinateSystem.from_three_points(origin, x_ax, y_ax)
-    # r = Robot(right_robot_ip, right_robot_port, coord_system, None)
-    # r.connect()
-    #
-    #
+    # initialize coordinate system
+    x_ax = np.array([404.36, -91.24, 0.36])
+    y_ax = np.array([331.34, 307.78, 1.09])
+    origin = np.array([565.7, 65.05, 0.56])
+    coord_system = CoordinateSystem.from_three_points(origin, x_ax, y_ax)
+    r = Robot(right_robot_ip, right_robot_port, coord_system, None)
+    r.connect()
+
+
     # for i in range(100):
     #     displacement = 7*random() + 0.1
     #     set_reference_force()
@@ -81,37 +81,70 @@ if __name__ == "__main__":
     #     with open('displacements_left.csv', 'a+') as f:
     #         f.write(f"{displacement}, {estimated_displacement}\n")
 
+
+
     ###### evaluate ####
-    true = []
-    estimated = []
-    diff = []
-    with open('displacements_left.csv', 'r') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            true.append(float(row[0]))
-            estimated.append(float(row[1]))
-            diff.append(float(row[1]) - float(row[0]))
+    # true = []
+    # estimated = []
+    # diff = []
+    # with open('displacements_left.csv', 'r') as f:
+    #     reader = csv.reader(f)
+    #     for row in reader:
+    #         true.append(float(row[0]))
+    #         estimated.append(float(row[1]))
+    #         diff.append(float(row[1]) - float(row[0]))
+    #
+    # mean_diff = np.mean(diff)
+    # print(f"Mean difference: {mean_diff}")
+    # print(f"Std difference: {np.std(diff)}")
+    #
+    # new_diff = []
+    # for i in diff:
+    #     new_diff.append(abs(i - mean_diff))
+    #     print(i - mean_diff)
+    #
+    # mean_diff = np.mean(new_diff)
+    # print(f"Mean difference: {mean_diff}")
+    # print(f"Std difference: {np.std(new_diff)}")
+    #
+    # fig_dims = (5.6, 1.5)
+    # fig, ax = plt.subplots(figsize=fig_dims)
+    #
+    # # sns.displot(data=new_diff, bins=25)
+    # ax = sns.boxplot(data=new_diff, orient='h')
+    # plt.tight_layout()
+    # ax.set(ylabel='', xlabel='Absoluter Fehler in mm')
+    # plt.show()
+    #
+    #
 
-    mean_diff = np.mean(diff)
-    print(f"Mean difference: {mean_diff}")
-    print(f"Std difference: {np.std(diff)}")
 
-    new_diff = []
-    for i in diff:
-        new_diff.append(abs(i - mean_diff))
-        print(i - mean_diff)
+    ################ plot step response ##############3
+    distance = 5
+    move_along_own_axis('x', -distance)
 
-    mean_diff = np.mean(new_diff)
-    print(f"Mean difference: {mean_diff}")
-    print(f"Std difference: {np.std(new_diff)}")
+    forces = {'Zeit': [], 'Kraft': []}
 
-    fig_dims = (5.6, 1.5)
+    for i in range(100):
+        force = r.get_force()[0]
+        if i == 0:
+            start_time = time.time()
+        elapsed = time.time() - start_time
+        forces['Zeit'].append(elapsed)
+        forces['Kraft'].append(force)
+
+    move_along_own_axis('x', distance)
+
+    df = pd.DataFrame(forces)
+    print(df)
+
+    fig_dims = (5.8, 3.2)
     fig, ax = plt.subplots(figsize=fig_dims)
 
-    # sns.displot(data=new_diff, bins=25)
-    ax = sns.boxplot(data=new_diff, orient='h')
+    sns.lineplot(data=df, x='Zeit', y='Kraft')
+    # # ax.set(ylabel='Achse', xlabel='Fehler in $^\circ$')
+    # ax.set(ylabel='Achse', xlabel='Fehler in mm')
+    # ax.set(xlim=(-0.01, 1.5))
     plt.tight_layout()
-    ax.set(ylabel='', xlabel='Absoluter Fehler in mm')
+    # # plt.savefig('/home/bch_svt/masterarbeit/figures/jitter/detection_libraries_jitter_comparison.pdf', format='pdf')
     plt.show()
-
-
