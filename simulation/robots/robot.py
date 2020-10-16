@@ -7,7 +7,7 @@ import matplotlib; matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
 from matplotlib import style
 from matplotlib import animation
-style.use('fivethirtyeight')
+# style.use('fivethirtyeight')
 from utils.utils import plane_normal_from_points, define_axis, calculate_rotation, x_unit_vector, y_unit_vector, z_unit_vector, right_robot_home_position_world
 from cv.transformations import matrix2pose_XYZ, pose2matrix_XYZ, pose2matrix_ZYX, matrix2pose_ZYX, get_Rz_h, get_Ry_h, get_Rx_h
 import math
