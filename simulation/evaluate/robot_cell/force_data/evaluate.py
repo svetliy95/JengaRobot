@@ -17,19 +17,22 @@ rc('text.latex', preamble=r'\usepackage{cmbright}')
 
 
 def get_from_logging_file():
-    data = {'x': [], 'y': [], 'z': [], 'Mx': [], 'My': [], 'Mz': []}
-    with open('./forces_2ms.fsl') as f:
+    data = []
+    avg_time = 2
+    with open('./forces_2ms_working_machines.fsl') as f:
         reader = csv.reader(f)
         for i, l in enumerate(reader):
             if i > 9:
-                data['x'].append(float(l[1]))
-                data['y'].append(float(l[2]))
-                data['z'].append(float(l[3]))
-                data['Mx'].append(float(l[4]))
-                data['My'].append(float(l[5]))
-                data['Mz'].append(float(l[6]))
+                data.append({'axis': 'Fx', 'value': float(l[1]), 'avg_time': avg_time})
+                data.append({'axis': 'Fy', 'value': float(l[2]), 'avg_time': avg_time})
+                data.append({'axis': 'Fz', 'value': float(l[3]), 'avg_time': avg_time})
+                data.append({'axis': 'Mx', 'value': float(l[4]), 'avg_time': avg_time})
+                data.append({'axis': 'My', 'value': float(l[5]), 'avg_time': avg_time})
+                data.append({'axis': 'Mz', 'value': float(l[6]), 'avg_time': avg_time})
 
-    return data
+    df = pd.DataFrame(data)
+
+    return df
 
 def create_data_frame_from_file(avg_time):
     data = []
@@ -56,6 +59,8 @@ df5 = create_data_frame_from_file(200)
 df6 = create_data_frame_from_file(500)
 
 dframes = [df1, df2, df3, df4, df5, df6]
+
+dframes = [get_from_logging_file()]
 
 df = pd.concat(dframes)
 x_axis = df['axis'] == "Fx"
