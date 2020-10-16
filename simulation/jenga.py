@@ -1617,7 +1617,8 @@ if __name__ == "__main__":
     #
     #         env.close()
 
-    for blocks in range(6, 0, -6):
+    # for blocks in range(6, 0, -6):
+    for blocks in [54]:
         for idx in range(1, 11):
             start_time = time.time()
             env = jenga_env_wrapper(True, env_var=(0.005, idx, blocks))
