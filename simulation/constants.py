@@ -8,10 +8,10 @@ g_timestep = 0.005
 g_blocks_num = 48
 g_blocks_max = 54
 flipping_threshold = 30  # in degrees
-# scaler = 50
-# one_millimeter = 0.001 * scaler
-scaler = 1000
+scaler = 50
 one_millimeter = 0.001 * scaler
+# scaler = 1000
+# one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
 coordinate_axes_pos_x = -0.3 * scaler
@@ -197,6 +197,7 @@ left_gripper_ip = '192.168.10.1'
 real_tag_pos = np.array([0, 0, 0])
 right_robot_home_position_world = np.array([158.613, -156.59, 95.871, 0.0, 0.0, 135])
 right_robot_home_position_world = np.array([78.632, -19.887, 320, 0, 0, -45])
+right_robot_home_position_world = np.array([146, -125, 320, 0, 0, -45])
 zwischenablage_place_pose = np.array([298.443, 88.613, 76.435, 34.864, -29.77 , -12.606])
 zwischenablage_place_pos = np.array([298.443, 88.613, 76.435])
 zwischenablage_place_quat = Quaternion(0.9249325768880927, 0.2608642425642888, -0.2753860975559344, -0.024740097724662957)
@@ -215,7 +216,7 @@ loose_block_height_threshold = 0.05  # in mm
 right_robot_taster_offset = -67  # in mm
 stopover_height = 320
 
-read_force_wait = 1.0  # seconds
+read_force_wait = 1.5  # seconds
 
 # simulation localization errors
 x_error_dist_params = (1.2655901036253412, -0.15175142356915827, -0.1153019687491872, 0.3251173548429831)

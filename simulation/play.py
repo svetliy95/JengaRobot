@@ -98,8 +98,8 @@ class jenga_env(gym.Env):
         self.individual_pushing_distance = 10
         self.last_force = 0  # needed for calculating block displacement using force
         # self.positions_to_check = {i: {j for j in range(3)} for i in range(4, g_blocks_num - 9 + 3)}
-        self.positions_to_check = {i: {j for j in range(3)} for i in range(3, g_blocks_num - 9 + 3)}
-        # self.positions_to_check = self.get_blocks_to_check_ml()
+        # self.positions_to_check = {i: {j for j in range(3)} for i in range(6, g_blocks_num - 9 + 3)}
+        self.positions_to_check = self.get_blocks_to_check_ml()
         # self.checked_positions = {3: {0, 1, 2}, 7: {0, 1, 2}, 12: {0, 1, 2}, 11: {0, 1, 2}, }
         # self.checked_positions = {4: {0, 1, 2}, 5: {0, 1, 2}, 6: {1, 2}, 7: {1, 2}, 8: {0, 1, 2}, 9: {1}, 10: {0, 1, 2}, 11: {1}, 12: {1}, 13: {0, 2}, 14: {1}, 15: {0, 1, 2}, 16: {1}, 17: {0, 2}}
         # self.positions_to_check = self.create_random_blocks_to_check(30)
@@ -169,6 +169,9 @@ class jenga_env(gym.Env):
             states = [i[0] for i in data]
             rewards = [i[1] for i in data]
 
+            states = states[1:]
+            rewards = rewards[1:]
+
             forces = [i[0] for i in states]
             block_displacements = [i[1] for i in states]
             total_displacements = [i[2] for i in states]
@@ -181,16 +184,18 @@ class jenga_env(gym.Env):
             ys.append(current_step_tower_disp)
             ys.append(current_step_max_disp)
             ys.append(block_displacements)
+            ys.append(total_displacements)
             ys.append(forces)
             ys.append(rewards)
 
-            axes_titles = ['Current step average displacement', 'Current step max displacement', 'Block displacement', 'Force', 'Reward']
+            axes_titles = ['Current step average displacement', 'Current step max displacement', 'Block displacement', 'Total block displacement', 'Force', 'Reward']
 
 
             y_limits = []
             y_limits.append([-1, 3])
             y_limits.append([-1, 3])
             y_limits.append([-1, 3])
+            y_limits.append([0, 25])
             y_limits.append([-0.3, 0.7])
             y_limits.append([-5, 5])
             y_limits.append([-0.5, 0.5])
@@ -207,8 +212,8 @@ class jenga_env(gym.Env):
                 axs[i].plot(xs, ys[i])
 
         # define plot for the force data plotting
-        n = 5
-        state_figure, axs = plt.subplots(nrows=3, ncols=2)
+        n = 6
+        state_figure, axs = plt.subplots(nrows=3, ncols=2, num='Behavioral Cloning Features')
         axs = np.reshape(axs, (6,))
 
         # state_figure = plt.figure()
@@ -423,8 +428,15 @@ class jenga_env(gym.Env):
                 # heights = [block_sizes[block_id]['height'] for block_id in layer]
                 heights = []
                 layer = [layers[lvl][i] for i in range(3)]
+                absent_blocks = set()
+
                 for i in range(len(layer)):
-                    heights.append(block_sizes[layer[i]]['height'])
+                    block_id = layer[i]
+                    if block_id is not None:
+                        heights.append(block_sizes[block_id]['height'])
+                    else:
+                        heights.append(block_height_min)
+                        absent_blocks.update({i})
                 if heights[0] > heights[2]:
                     heights[0], heights[2] = heights[2], heights[0]
                     inverted = True
@@ -448,13 +460,17 @@ class jenga_env(gym.Env):
                     if prediction:
                         if inverted:
                             if pos == 2:
-                                blocks_to_check[lvl].update({0})
+                                if not 0 in absent_blocks:
+                                    blocks_to_check[lvl].update({0})
                             elif pos == 0:
-                                blocks_to_check[lvl].update({2})
+                                if not 2 in absent_blocks:
+                                    blocks_to_check[lvl].update({2})
                             else:
-                                blocks_to_check[lvl].update({pos})
+                                if not pos in absent_blocks:
+                                    blocks_to_check[lvl].update({pos})
                         else:
-                            blocks_to_check[lvl].update({pos})
+                            if not pos in absent_blocks:
+                                blocks_to_check[lvl].update({pos})
 
                     # print(f"Feature vector: {feature_vec}")
                     # print(f"Predictions: {prediction}")
@@ -808,8 +824,9 @@ class jenga_env(gym.Env):
         # self.wait_force_stabilizing()
 
         force = self.get_averaged_force(5) - self.reference_force
-        block_displacement = self.calculate_block_displacement_from_force(self.pushing_distance, force - self.last_force)
-        self.last_force = force
+        print(f"Last force: {self.last_force}, Force: {force}, Force - last_force: {force}")
+        block_displacement = self.calculate_block_displacement_from_force(self.pushing_distance, force)
+        # self.last_force = force
         self.total_distance += block_displacement
         return force, block_displacement, poses
 
@@ -1308,6 +1325,13 @@ class jenga_env(gym.Env):
         # go home
         self.go_home()
 
+        poses = self.tower.get_poses_cv()
+        positions = self.tower.get_positions_from_poses(poses)
+        orientations = self.tower.get_orientations_from_poses(poses)
+
+        # calculate corrections for the orientations
+        self.tower.calculate_orientation_corrections(orientations)
+
     def check_blocks(self):
         self.go_home()
 
@@ -1349,7 +1373,7 @@ class jenga_env(gym.Env):
     def check_certain_blocks(self):
         self.go_home()
 
-        loose_blocks = [(27, 13, 1), (11 , 8, 2)]
+        loose_blocks = [(35, 7, 1)]
 
         for block_id, lvl, pos in loose_blocks:
             poses = self.tower.get_poses_cv()
@@ -1535,9 +1559,9 @@ class jenga_env(gym.Env):
                 self.push_through(self.max_pushing_distance - self.individual_pushing_distance)
 
                 log.debug(f"Before pull_and_place")
-                # self.extract_and_place_on_top(self.current_block_id)
+                self.extract_and_place_on_top(self.current_block_id)
                 self.go_home()
-                input(f"Confirm extracting: ")
+                # input(f"Confirm extracting: ")
                 log.debug(f"After pull_and_place")
 
 
@@ -1604,6 +1628,8 @@ class jenga_env(gym.Env):
                 force, displacement, poses = self.push()
                 elapsed = time.time() - start
                 print(f'Push time: {elapsed*1000:.2f}ms')
+
+                self.set_reference_force()
 
                 log.debug(f"Pushed!")
                 self.steps_pushed += 1

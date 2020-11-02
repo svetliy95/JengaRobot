@@ -687,7 +687,7 @@ class Extractor:
                                 <joint name="finger2_joint" pos="0 0 0" type="slide" axis="0 1 0" damping="{Extractor.finger_damping}"/>
                                 <geom type="box" size="{Extractor.finger_length} {Extractor.size} {Extractor.size}" mass="{Extractor.finger_mass}" friction="{1*5} {0.005*5} {0.0001*5}"/>
                             </body>                            
-                            <geom type="box" size="0.4 0.4 0.4" mass="0.1" rgba="1 0 0 1" pos="0 0 0"/>
+                            <!-- <geom type="box" size="0.4 0.4 0.4" mass="0.1" rgba="1 0 0 1" pos="0 0 0"/> -->
                             
                             <!-- boxes for axes marking -->
                             <!-- <geom type="box" size="0.2 0.2 0.01" mass="0.1" rgba="0 1 0 1" pos="0 {1} {Extractor.size + 0.01}"/> -->

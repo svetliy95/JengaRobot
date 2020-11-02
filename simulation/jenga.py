@@ -434,7 +434,7 @@ class jenga_env(gym.Env):
                 axs[i].plot(xs, ys[i])
 
         # define plot for the force data plotting
-        n = 5
+        n = 6
         state_figure, axs = plt.subplots(nrows=3, ncols=2)
         axs = np.reshape(axs, (6,))
 
@@ -1559,7 +1559,9 @@ class jenga_env_wrapper(gym.Env):
 
 
 if __name__ == "__main__":
-
+    env = jenga_env()
+    env.pusher.set_position((10, 10, 0.2))
+    env.extractor.set_finger_distance(3.5)
     pass
 
     # start_total_time = time.time()
