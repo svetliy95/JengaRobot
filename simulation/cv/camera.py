@@ -231,7 +231,7 @@ class Camera:
         return image
 
     def show_online(self):
-        self.start_grabbing()
+        # self.start_grabbing()
 
         while True:
             im = self.get_raw_image()

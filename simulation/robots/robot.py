@@ -392,32 +392,39 @@ class Robot:
         self.gripper.move_to_pos(100, 200)
         self.gripper.wait_until_positioning_done()
 
+
 if __name__ == "__main__":
 
-    scaler = 0.01
-
-    # x-ax [ 631.31   65.82    1.38 -179.76    5.56   17.85]
-    # y-ax [ 397.7  -279.84    1.09 -179.75    5.57   17.86]
-    # origin [ 404.85   70.08    0.55 -177.81    3.5    -2.07]
-    x_ax = np.array([631.31, 65.82, 1.38])
-    y_ax = np.array([397.7, -279.84, 1.09])
-    origin = np.array([404.85, 70.08, 0.55])
-
-    # initialize coordinate system
-    x_ax = np.array([404.36, -91.24, 0.36])
-    y_ax = np.array([331.34, 307.78, 1.09])
-    origin = np.array([565.7, 65.05, 0.56])
-    coord_system = CoordinateSystem.from_three_points(origin, x_ax, y_ax)
+    right_robot_coord_system = CoordinateSystem.from_three_points(right_robot_origin_point,
+                                                                  right_robot_x_axis_point,
+                                                                  right_robot_y_axis_point)
 
     # initialize grippers
     g1 = Gripper(right_gripper_ip)
-    g2 = Gripper(left_gripper_ip)
 
     # initialize robots
-    r1 = Robot(right_robot_ip, right_robot_port, coord_system, g1)
-    r2 = Robot(left_robot_ip, left_robot_port, coord_system, g2)
+    r1 = Robot(right_robot_ip, right_robot_port, right_robot_coord_system, g1)
     r1.connect()
-    # r2.connect()
+
+    pose_robot = r1.get_world_pose(degrees=True)
+    take_pos = pose_robot[:3]
+    take_quat = euler2quat(pose_robot[3:],
+                                          degrees=True)  # euler2quat(zwischenablage_take_pose[3:], degrees=True)
+    print(f"Pose world: {repr(pose_robot)}")
+    print(f"Pos world: {repr(take_pos)}")
+    print(f"Quat world: {repr(take_quat)}")
+
+
+    # r1.mvs(np.array([ 5.6568e+02,  6.4970e+01,  2.0530e+01,  180, 0,
+    #     135]), pos_flags='(7, 0)', speed=1)
+    # r1.switch_tool_two_fingers()
+    # r1.set_world_pos_orientation(np.array([0, 0, 20]),
+    #                              Quaternion(axis=(0, 0, 1), degrees=-90),
+    #                              pos_flag=(7, 0))
+
+    exit()
+
+
 
     pos = r1.get_world_position()
     quat = r1.get_world_orientation()

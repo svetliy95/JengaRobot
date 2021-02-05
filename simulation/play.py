@@ -45,8 +45,6 @@ class jenga_env(gym.Env):
         # initialize cameras
         self.cam1 = Camera(cam1_serial, cam1_mtx, cam1_dist)
         self.cam2 = Camera(cam2_serial, cam2_mtx, cam2_dist)
-        # cam1.start_grabbing()
-        # cam2.start_grabbing()
 
         assert one_millimeter == 1, "Wrong scaler parameter!"
 
@@ -65,10 +63,9 @@ class jenga_env(gym.Env):
                                                decode_sharpening=decode_sharpening2)
 
         # initialize robot coordinate system
-        x_ax = np.array([404.36, -91.24, 0.36])
-        y_ax = np.array([331.34, 307.78, 1.09])
-        origin = np.array([565.7, 65.05, 0.56])
-        coord_system = CoordinateSystem.from_three_points(origin, x_ax, y_ax)
+        coord_system = CoordinateSystem.from_three_points(right_robot_origin_point,
+                                                          right_robot_x_axis_point,
+                                                          right_robot_y_axis_point)
 
         # initialize the robot
         gripper = Gripper(right_gripper_ip)
@@ -503,7 +500,6 @@ class jenga_env(gym.Env):
         print(f"Blocks to check: {blocks_to_check}")
 
         return blocks_to_check
-
 
     def move_to_random_block(self):
         # get block poses
@@ -1373,20 +1369,20 @@ class jenga_env(gym.Env):
     def check_certain_blocks(self):
         self.go_home()
 
-        loose_blocks = [(35, 7, 1)]
+        loose_blocks = [(39, 14, 2)]
 
         for block_id, lvl, pos in loose_blocks:
             poses = self.tower.get_poses_cv()
             self.move_to_block_id_push(block_id, poses)
             total_distance = 0
-            for i in range(30):
+            for i in range(20):
                 force, displacement, poses = self.push()
                 total_distance += displacement
                 print(f"Step #i: Force: {force}, displacement: {displacement}")
                 if force > self.get_force_threshold(lvl):
                     break
                 if i > 10:
-                    self.push_through(30 - total_distance)
+                    self.push_through(20 - total_distance)
                     # input('Confirm extraction:')
 
                     self.extract_and_place_on_top(block_id)
@@ -1419,7 +1415,6 @@ class jenga_env(gym.Env):
         layers = self.tower.get_layers_state(positions, orientations, origin)
 
         loose_blocks = []
-        print(f"Layers: {layers}")
         for i in layers:
             if i > 2:
                 id0 = layers[i][0]
@@ -1429,15 +1424,6 @@ class jenga_env(gym.Env):
                     height0 = self.block_sizes[id0]['height']
                     height1 = self.block_sizes[id1]['height']
                     height2 = self.block_sizes[id2]['height']
-
-                    if i == 9:
-                        print(f"Block #{id0}: {height0}")
-                        print(f"Block #{id1}: {height1}")
-                        print(f"Block #{id2}: {height2}")
-                    if i == 12:
-                        print(f"Block #{id0}: {height0}")
-                        print(f"Block #{id1}: {height1}")
-                        print(f"Block #{id2}: {height2}")
 
                     # define points
                     p0 = (0, height0)
@@ -1772,17 +1758,24 @@ class jenga_env(gym.Env):
 if __name__ == "__main__":
     jenga = jenga_env(True)
 
-    # poses = jenga.tower.get_poses_cv()
+    poses = jenga.tower.get_poses_cv()
     # positions = jenga.tower.get_positions_from_poses(poses)
     # layers = jenga.tower.get_layers(positions)
 
     # jenga.get_blocks_to_check_ml()
     #
     # exit()
-
     # jenga.check_extractable_blocks()
-    jenga.check_certain_blocks()
     # jenga.extract_certain_blocks()
+
+    # jenga.move_to_block_push(4, 1, poses)
+
+    # put on zwischenablage
+
+    jenga.take_from_zwischenablage()
+    jenga.place_on_top(39)
+
+    # jenga.take_from_zwischenablage()
 
     exit()
 

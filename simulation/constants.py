@@ -8,10 +8,11 @@ g_timestep = 0.005
 g_blocks_num = 48
 g_blocks_max = 54
 flipping_threshold = 30  # in degrees
-scaler = 50
+
+
+# scaler = 50  # parameter for the simulation
+scaler = 1000  # parameter for execution in the real robot cell
 one_millimeter = 0.001 * scaler
-# scaler = 1000
-# one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
 coordinate_axes_pos_x = -0.3 * scaler
@@ -198,13 +199,23 @@ real_tag_pos = np.array([0, 0, 0])
 right_robot_home_position_world = np.array([158.613, -156.59, 95.871, 0.0, 0.0, 135])
 right_robot_home_position_world = np.array([78.632, -19.887, 320, 0, 0, -45])
 right_robot_home_position_world = np.array([146, -125, 320, 0, 0, -45])
-zwischenablage_place_pose = np.array([298.443, 88.613, 76.435, 34.864, -29.77 , -12.606])
-zwischenablage_place_pos = np.array([298.443, 88.613, 76.435])
-zwischenablage_place_quat = Quaternion(0.9249325768880927, 0.2608642425642888, -0.2753860975559344, -0.024740097724662957)
-zwischenablage_take_pose = np.array([257.94 ,  90.479,  54.222, -35.076, -30.15 , 100.069])
+
+zwischenablage_place_pose = np.array([292.01451531,  82.74434148,  75.23413787,  34.29159196,
+       -30.4481926 , -11.46574993])
+zwischenablage_place_pos = zwischenablage_place_pose[:3]
+zwischenablage_place_quat = Quaternion(0.9251448528576152, 0.25797059560214297, -0.27808439096092347, -0.01507463232153114)
+
+zwischenablage_take_pose = np.array([256.31851241,  84.31851232,  52.9057846, -34.94813146,
+       -30.30068803,  99.81459556])
 zwischenablage_take_pos = zwischenablage_take_pose[:3]
-zwischenablage_take_quat = Quaternion(0.6514593292525659, 0.0031738377130947626, -0.3823000037465868, 0.6553147153996525)  # euler2quat(zwischenablage_take_pose[3:], degrees=True)
+zwischenablage_take_quat = Quaternion(0.6529905954236919, 0.004046318808482663, -0.3822773639897692, 0.6537973130667838)  # euler2quat(zwischenablage_take_pose[3:], degrees=True)
 right_robot_spring_constant = 0.075  # N/mm
+
+# constants for mapping of robot coordinate system and the coordinate system of the reference tag
+# all points are measured using special probe on the robot gripper (in robot coordinate system)
+right_robot_x_axis_point = np.array([408.35, -88.78, 0.41])
+right_robot_y_axis_point = np.array([329.76, 307.72, 0.59])
+right_robot_origin_point = np.array([566.64, 68.3, 0.88])
 
 # play
 loose_block_height_threshold = 0.05  # in mm
