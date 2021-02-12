@@ -28,12 +28,13 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-log = logging.Logger(__name__)
-file_formatter = logging.Formatter('%(asctime)s:%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
-file_handler = logging.FileHandler(filename='pusher.log', mode='w')
-file_handler.setFormatter(file_formatter)
-file_handler.setLevel(logging.DEBUG)
-log.addHandler(file_handler)
+### uncomment this to write logs to file ###
+# log = logging.Logger(__name__)
+# file_formatter = logging.Formatter('%(asctime)s:%(levelname)sMain process:PID:%(process)d:%(funcName)s:%(message)s')
+# file_handler = logging.FileHandler(filename='pusher.log', mode='w')
+# file_handler.setFormatter(file_formatter)
+# file_handler.setLevel(logging.DEBUG)
+# log.addHandler(file_handler)
 
 class Pusher():
     # pusher start pos

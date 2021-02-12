@@ -1,9 +1,9 @@
 from numpy.random import normal
 from math import sqrt
 from constants import *
-from pusher import Pusher
+from simulation.pusher import Pusher
 from tower import Tower
-from extractor import Extractor
+from simulation.extractor import Extractor
 import math
 import scipy.stats as stats
 import time
@@ -11,9 +11,10 @@ import os
 
 
 def generate_textures_and_materials_assets():
+    textures_abs_path = os.path.abspath("../resources/textures")
     s = ''
     for i in range(g_blocks_num):
-        s += f"""<texture name="text_block{i}" type="cube" fileright="/home/bch_svt/cartpole/simulation/images/texture_block{i}_right.png" fileleft="/home/bch_svt/cartpole/simulation/images/texture_block{i}_left.png"/>
+        s += f"""<texture name="text_block{i}" type="cube" fileright="{textures_abs_path}/texture_block{i}_right.png" fileleft="{textures_abs_path}/texture_block{i}_left.png"/>
                 <material name="mat_block{i}" texture="text_block{i}"/>
                 """
     return s
@@ -121,6 +122,8 @@ def generate_scene(num_blocks=54,
                    spacing=block_width_sigma*3,
                    seed=None):
 
+    textures_abs_path = os.path.abspath("../resources/textures")
+
     print(f"Process seed: {seed}")
 
     if seed is None:
@@ -172,13 +175,13 @@ def generate_scene(num_blocks=54,
             <asset>
                 <!-- textures and corresponding materials for blocks -->
                 {textures_and_material_assets}
-                <texture name="tex_floating" type="cube" fileright="/home/bch_svt/cartpole/simulation/images/floating_object_texture.png"/>
+                <texture name="tex_floating" type="cube" fileright="{textures_abs_path}/floating_object_texture.png"/>
                 <material name="mat_floating" texture="tex_floating"/>
-                <texture name="tex_coord_frame" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture.png"/>
+                <texture name="tex_coord_frame" type="cube" filefront="{textures_abs_path}/coordinate_frame_texture.png"/>
                 <material name="mat_coord_frame" texture="tex_coord_frame"/>
-                <texture name="tex_coord_frame2" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture2.png"/>
+                <texture name="tex_coord_frame2" type="cube" filefront="{textures_abs_path}/coordinate_frame_texture2.png"/>
                 <material name="mat_coord_frame2" texture="tex_coord_frame2"/>
-                <texture name="tex_coord_frame3" type="cube" filefront="/home/bch_svt/cartpole/simulation/images/coordinate_frame_texture3.png"/>
+                <texture name="tex_coord_frame3" type="cube" filefront="{textures_abs_path}/coordinate_frame_texture3.png"/>
                 <material name="mat_coord_frame3" texture="tex_coord_frame3"/>
                 <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/> 
                 <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" 

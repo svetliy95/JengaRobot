@@ -1,0 +1,70 @@
+'Servo On
+'*************************************************************************
+'INIT
+'*************************************************************************
+GetM 1
+Def Float f1, speed, defaultSpeed, maxSpeed
+Def Pos position
+Def Inte func, mvsFuncID, getPosFuncID, getForceID, switchToolID, ackFlag, toolID, movFuncID, detour
+'Constants
+mvsFuncID%=1001
+getPosFuncID%=2002
+getForceID%=3003
+switchToolID%=4004
+movFuncID%=5005
+ackFlag%=777
+defaultSpeed=5
+maxSpeed=15
+'*************************************************************************
+'MAIN
+'*************************************************************************
+Ovrd defaultSpeed
+Open "COM2:" As #2
+While(1)
+   Input#2, func%
+   If func%=mvsFuncID% Then
+      Print#2, ackFlag%
+      Input#2, position
+      Print#2, ackFlag%
+      Input#2, speed
+      If speed <> 0 Then
+         Ovrd speed
+      Else
+  Ovrd defaultSpeed
+      EndIf
+      Mvs position
+      Print#2, ackFlag%
+      func% = 0
+   EndIf
+   If func%=getPosFuncID% Then
+      Print#2, P_Curr
+      func% = 0
+   EndIf
+   If func%=getForceID% Then
+      Print#2, P_FsCurD
+      func% = 0
+   EndIf
+   If func%=switchToolID% Then
+      Print#2, ackFlag%
+      Input#2, toolID%
+      Tool toolID%
+      Print#2, ackFlag%
+      func% = 0
+   EndIf
+   If func%=movFuncID% Then
+      Print#2, ackFlag%
+      Input#2, position
+      Print#2, ackFlag%
+      Input#2, speed
+      If speed <> 0 Then
+         Ovrd Min(speed, maxSpeed)
+      Else
+         Ovrd defaultSpeed
+      EndIf
+      Mov position
+      Print#2, ackFlag%
+      func% = 0
+   EndIf
+   Dly 0.001
+WEnd
+Close#2

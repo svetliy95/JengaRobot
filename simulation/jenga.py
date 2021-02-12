@@ -1,7 +1,7 @@
 from mujoco_py import load_model_from_xml, MjSim, MjViewer, MjRenderContextOffscreen
 from pynput import keyboard
 import os
-from generate_scene import generate_scene
+from simulation.generate_scene import generate_scene
 import numpy as np
 from pyquaternion import Quaternion
 import time
@@ -14,9 +14,9 @@ from matplotlib import style
 import matplotlib.animation as animation
 style.use('fivethirtyeight')
 from constants import *
-from pusher import Pusher
+from simulation.pusher import Pusher
 from tower import Tower
-from extractor import Extractor
+from simulation.extractor import Extractor
 from math import sin, cos, radians
 import cv2
 import math
@@ -55,12 +55,13 @@ stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 log.addHandler(stream_handler)
 
-log = logging.Logger(__name__)
-file_formatter = logging.Formatter('%(asctime)s:%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
-file_handler = logging.FileHandler(filename='jenga.log', mode='w')
-file_handler.setFormatter(file_formatter)
-file_handler.setLevel(logging.DEBUG)
-log.addHandler(file_handler)
+### uncomment this to write logs to file ###
+# log = logging.Logger(__name__)
+# file_formatter = logging.Formatter('%(asctime)s:%(levelname)s:PID:%(process)d:%(funcName)s:%(message)s')
+# file_handler = logging.FileHandler(filename='jenga.log', mode='w')
+# file_handler.setFormatter(file_formatter)
+# file_handler.setLevel(logging.DEBUG)
+# log.addHandler(file_handler)
 
 # important line, without it there is a concurrency problem between processes
 multiprocessing_logging.install_mp_handler(log)
@@ -1256,7 +1257,7 @@ class jenga_env(gym.Env):
                     #     self.toppled_fl = True
                     #     log.debug(f"Fake tower toppled!")
 
-                    # get positions of blocks and plot images
+                    # get positions of blocks and plot textures
                     if self.t % 100 == 0 and self.render and not self.on_screen_rendering:
                         # self.off_screen_render_and_plot_errors(line1, fig_errors)
                         pass
