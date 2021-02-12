@@ -10,8 +10,8 @@ g_blocks_max = 54
 flipping_threshold = 30  # in degrees
 
 
-scaler = 50  # parameter for the simulation
-# scaler = 1000  # parameter for execution in the real robot cell
+# scaler = 50  # parameter for the simulation
+scaler = 1000  # parameter for execution in the real robot cell
 one_millimeter = 0.001 * scaler
 
 # coordinate axes parameter
