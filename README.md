@@ -1,4 +1,3 @@
-
 # Instructions
 ### Robot starting 
 1. Switch the main robot controller on
@@ -7,7 +6,12 @@
 ### Robot playing start
 1. Switch on servos
 2. Start the execution of the program *jenga* on the robot controller.
-3. Execute the script play.py
+3. Execute the script play.py (you must confirm a tower reset by pressing any key in the console)
+
+:exclamation: Check camera parameters in pylonViewer before start. Unsuitable parameters may lead to huge localization errors. :exclamation:
+
+### Custom controlling
+Create an instance of the class _jenga_env_ from _read_jenga_env.py_ and use its methods for robot controlling.
 
 ### Blocks calibration
 :bangbang: Blocks are already calibrated. Do this only if you want to recalibrate or use another set of jenga blocks.
@@ -79,14 +83,14 @@ For Robot initializing you need to define a world coordinate system for it. It c
 # Things to pay attention to
 * Reference the gripper after each restart if it. Otherweise the gripper will not work.
 * Set proper camera parameters in pylonViewer after each PC restart. They will be not saved. (Further passing of the camera parameter from the python side can be implemented. This feature is not implemented yet.)
-* MuJoCo specific flags for starting scripts
-* Creating of empty folder for "nvidia"
 * :bangbang: Do not mix two sets of jenga blocks!!! They share the same ids. Mixing blocks from two different sets will corrupt blocks calibration.
 * After replacement of any tag (reference tag or tags on the blocks) adapt tag sizes all over the code. Otherwise localization won't work correctly.
 * Adapt the variable _scaler_ in _constants.py_ while switching from real system to simulation and vice versa. For the simulation the scaler must be 50 and for the real environment 1000.
+* After last code refactoring (12.02.2021) it can happen that the paths (or module imports) used in some scripts are not valid anymore. This can lead to errors. In this case try to change these paths/imports.
  
 # Recommendations
-* Start *localization_visulization.py* before robot playing start. Check that the blocks are correctly recognized and localized. In the best case are block must be colored green.
+* Use PyCharm. You can open the repository folder as a PyCharm project.
+* Start *localization_visulization.py* before robot playing start. Check that the blocks are correctly recognized and localized. In the best case all blocks must be colored green and there must be not too much positions jitter.
 * For the first run lower the speed on the robot controller.
 * You may want to play with *apriltags detector* parameters. They schould be optimal for current setup (11.02.2021), but should be possibly adapted after lense, camera or distance from camera to the turm change.
 
@@ -107,9 +111,6 @@ ValueError: could not convert string to float:
 Solution: restart both main controller and the controlling PLC.
  
 </blockquote>
-* MuJoCo specific flags for starting scripts
-* Creating of empty folder for "nvidia"
-* After last code refactoring it can happen that the absolute paths used in some scripts are not valid anymore. This can lead to errors. The using of relative paths was not possible in some cases (e.g. generating XML files for MuJoCo)
 
 ### Unable to connect to camera
 ```python
@@ -126,6 +127,21 @@ Check that non of the cameras are connected with the pylonViewer. Kill other pyt
 
 ### In case of "GLEW initalization error: Missing GL version" 
 Check https://github.com/openai/mujoco-py/issues/408#issuecomment-566796804
+
+### Missing path to your environment variable.
+```python
+Exception: 
+Missing path to your environment variable. 
+Current values LD_LIBRARY_PATH=
+Please add following line to .bashrc:
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/bch_svt/.mujoco/mujoco200/bin
+```
+
+Set following environment variables or pass them as parameters while executing the script:
+```
+PYTHONUNBUFFERED=1;LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so:/usr/lib/x86_64-linux-gnu/libGL.so;LD_LIBRARY_PATH=/home/bch_svt/.mujoco/mujoco200/bin:/usr/lib/nvidia-000:/usr/lib/x86_64-linux-gnu/libGL.so
+```
+If using PyCharm paste this string into the line "environment parameters" by "Run/Debug Configurations" of the script.
 
 
 # Configuration
