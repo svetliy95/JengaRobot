@@ -1,7 +1,7 @@
 # Instructions
 ### Robot starting 
-1. Switch the main robot controller on
-2. Restart the controlling PLC
+1. Switch on main robot controller
+2. Restart controlling PLC
 
 ### Robot playing start
 1. Switch on servos
